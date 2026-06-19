@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useAuth } from '../../../context/AuthContext';
 import { 
   Building2, 
   Search, 
@@ -8,14 +9,18 @@ import {
   X, 
   Check, 
   FolderOpen,
-  User,
   Info,
   Calendar,
-  Layers
+  Layers,
+  RefreshCw
 } from 'lucide-react';
 
 const DepartmentsTab = ({ departments, onUpdateDepartments, addActivityLog }) => {
+  const { user, getCompanyAdmins, registerDepartment, updateDepartmentDetails, deleteDepartmentDetails } = useAuth();
+  
   const [searchQuery, setSearchQuery] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
   
   // Modal & Form states
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -25,12 +30,13 @@ const DepartmentsTab = ({ departments, onUpdateDepartments, addActivityLog }) =>
   const [formData, setFormData] = useState({
     name: '',
     code: '',
-    manager: '',
     description: '',
     headcount: 0
   });
 
   const [errors, setErrors] = useState({});
+
+
 
   // Input changes
   const handleInputChange = (e) => {
@@ -47,7 +53,6 @@ const DepartmentsTab = ({ departments, onUpdateDepartments, addActivityLog }) =>
     const newErrors = {};
     if (!formData.name.trim()) newErrors.name = 'Department name is required';
     if (!formData.code.trim()) newErrors.code = 'Department code is required';
-    if (!formData.manager.trim()) newErrors.manager = 'Manager name is required';
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -59,11 +64,11 @@ const DepartmentsTab = ({ departments, onUpdateDepartments, addActivityLog }) =>
     setFormData({
       name: '',
       code: '',
-      manager: '',
       description: '',
       headcount: 0
     });
     setErrors({});
+    setSubmitError('');
     setIsModalOpen(true);
   };
 
@@ -74,67 +79,73 @@ const DepartmentsTab = ({ departments, onUpdateDepartments, addActivityLog }) =>
     setFormData({
       name: dept.name,
       code: dept.code,
-      manager: dept.manager,
       description: dept.description || '',
       headcount: dept.headcount || 0
     });
     setErrors({});
+    setSubmitError('');
     setIsModalOpen(true);
   };
 
   // Save (Add or Edit)
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!validateForm()) return;
 
-    let updatedList = [];
-    if (isEditMode) {
-      updatedList = departments.map(d => {
-        if (d.id === editingId) {
-          return {
-            ...d,
-            name: formData.name,
-            code: formData.code.toUpperCase(),
-            manager: formData.manager,
-            description: formData.description,
-            headcount: parseInt(formData.headcount) || 0
-          };
-        }
-        return d;
-      });
-      addActivityLog(`Updated department details for "${formData.name}"`);
-    } else {
-      const newDept = {
-        id: 'dept-' + Math.random().toString(36).substr(2, 9),
-        name: formData.name,
-        code: formData.code.toUpperCase(),
-        manager: formData.manager,
-        description: formData.description,
-        headcount: parseInt(formData.headcount) || 0,
-        createdAt: new Date().toISOString().split('T')[0]
-      };
-      updatedList = [newDept, ...departments];
-      addActivityLog(`Created new department: "${formData.name}" (${formData.code.toUpperCase()})`);
-    }
+    setSubmitting(true);
+    setSubmitError('');
 
-    onUpdateDepartments(updatedList);
-    setIsModalOpen(false);
+    try {
+      const payload = {
+        company_id: user?.company_id,
+        department_name: formData.name,
+        department_code: formData.code.toUpperCase(),
+        headcount_quota: parseInt(formData.headcount) || 0,
+        assigned_manager_id: null,
+        description: formData.description || '',
+        status: 'ACTIVE'
+      };
+
+      let updatedList = [];
+      if (isEditMode) {
+        const updatedDept = await updateDepartmentDetails(editingId, payload);
+        updatedList = departments.map(d => d.id === editingId ? updatedDept : d);
+        addActivityLog(`Updated department details for "${formData.name}"`);
+      } else {
+        const newDept = await registerDepartment(payload);
+        updatedList = [newDept, ...departments];
+        addActivityLog(`Created new department: "${formData.name}" (${formData.code.toUpperCase()})`);
+      }
+
+      onUpdateDepartments(updatedList);
+      setIsModalOpen(false);
+    } catch (err) {
+      console.error(err);
+      setSubmitError(err.response?.data?.message || err.message || 'Failed to save department details.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   // Delete
-  const handleDelete = (id, name) => {
+  const handleDelete = async (id, name) => {
     if (window.confirm(`Are you sure you want to delete the "${name}" department? This will remove all department associations.`)) {
-      const updatedList = departments.filter(d => d.id !== id);
-      onUpdateDepartments(updatedList);
-      addActivityLog(`Deleted department: "${name}"`);
+      try {
+        await deleteDepartmentDetails(id);
+        const updatedList = departments.filter(d => d.id !== id);
+        onUpdateDepartments(updatedList);
+        addActivityLog(`Deleted department: "${name}"`);
+      } catch (err) {
+        console.error(err);
+        alert(err.response?.data?.message || err.message || 'Failed to delete department.');
+      }
     }
   };
 
   // Search filtering
   const filteredDepts = departments.filter(dept => 
-    dept.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    dept.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    dept.manager.toLowerCase().includes(searchQuery.toLowerCase())
+    (dept.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (dept.code || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   return (
@@ -166,7 +177,7 @@ const DepartmentsTab = ({ departments, onUpdateDepartments, addActivityLog }) =>
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-text-muted" />
           <input
             type="text"
-            placeholder="Search departments, codes, managers..."
+            placeholder="Search departments, codes..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full pl-10 pr-4 py-2 bg-neutral-base border border-neutral-border rounded-theme-lg text-xs text-neutral-text placeholder-neutral-text-muted focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
@@ -186,7 +197,6 @@ const DepartmentsTab = ({ departments, onUpdateDepartments, addActivityLog }) =>
                 <tr className="border-b border-neutral-border text-[11px] font-bold text-neutral-text-muted uppercase tracking-wider bg-neutral-base/40">
                   <th className="py-3 px-6">Dept Code</th>
                   <th className="py-3 px-6">Department Name</th>
-                  <th className="py-3 px-6">Manager</th>
                   <th className="py-3 px-6 text-center">Headcount</th>
                   <th className="py-3 px-6">Created</th>
                   <th className="py-3 px-6 text-right">Actions</th>
@@ -213,13 +223,7 @@ const DepartmentsTab = ({ departments, onUpdateDepartments, addActivityLog }) =>
                       </div>
                     </td>
 
-                    {/* Manager */}
-                    <td className="py-3.5 px-6 font-medium text-neutral-text">
-                      <div className="flex items-center gap-2">
-                        <User className="w-3.5 h-3.5 text-neutral-text-muted" />
-                        <span>{dept.manager}</span>
-                      </div>
-                    </td>
+
 
                     {/* Headcount */}
                     <td className="py-3.5 px-6 text-center">
@@ -231,7 +235,7 @@ const DepartmentsTab = ({ departments, onUpdateDepartments, addActivityLog }) =>
                     {/* Date */}
                     <td className="py-3.5 px-6 text-neutral-text-muted font-medium flex items-center gap-1.5 mt-1.5 border-0">
                       <Calendar className="w-3.5 h-3.5 text-neutral-text-muted" />
-                      <span>{dept.createdAt}</span>
+                      <span>{dept.createdAt ? new Date(dept.createdAt).toISOString().split('T')[0] : 'N/A'}</span>
                     </td>
 
                     {/* Actions */}
@@ -334,20 +338,7 @@ const DepartmentsTab = ({ departments, onUpdateDepartments, addActivityLog }) =>
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-neutral-text mb-1">Assigned Manager *</label>
-                <input
-                  type="text"
-                  name="manager"
-                  value={formData.manager}
-                  onChange={handleInputChange}
-                  placeholder="e.g. Alan Turing"
-                  className={`w-full px-3 py-2 bg-neutral-base border rounded-theme-lg text-xs focus:outline-none ${
-                    errors.manager ? 'border-danger' : 'border-neutral-border'
-                  }`}
-                />
-                {errors.manager && <p className="text-[9px] text-danger mt-1 font-semibold">{errors.manager}</p>}
-              </div>
+
 
               <div>
                 <label className="block text-xs font-bold text-neutral-text mb-1">Description</label>
@@ -361,19 +352,28 @@ const DepartmentsTab = ({ departments, onUpdateDepartments, addActivityLog }) =>
                 />
               </div>
 
+              {submitError && (
+                <div className="p-3 bg-danger-light border border-danger/10 text-danger text-xs rounded-theme-lg font-medium animate-in fade-in">
+                  {submitError}
+                </div>
+              )}
+
               <div className="flex justify-end gap-2.5 pt-3 border-t border-neutral-border">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 border border-neutral-border hover:bg-neutral-muted text-neutral-text text-xs font-semibold rounded-theme-lg"
+                  disabled={submitting}
+                  className="px-4 py-2 border border-neutral-border hover:bg-neutral-muted text-neutral-text text-xs font-semibold rounded-theme-lg disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-primary hover:bg-primary-hover text-neutral-textInverse text-xs font-bold rounded-theme-lg"
+                  disabled={submitting}
+                  className="px-4 py-2 bg-primary hover:bg-primary-hover text-neutral-textInverse text-xs font-bold rounded-theme-lg disabled:opacity-50 flex items-center gap-1.5"
                 >
-                  {isEditMode ? 'Update' : 'Create'}
+                  {submitting && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                  <span>{isEditMode ? 'Update' : 'Create'}</span>
                 </button>
               </div>
             </form>

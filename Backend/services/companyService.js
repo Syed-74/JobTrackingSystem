@@ -299,6 +299,8 @@ class CompanyService {
                 adminData.adminBio || null
             ]);
 
+            // 5. Create Role Assignments (Omitted: dynamic roles dropped)
+
             await client.query('COMMIT');
 
             return {
@@ -325,7 +327,9 @@ class CompanyService {
                    a.admin_state AS "adminState", a.admin_country AS "adminCountry", 
                    a.admin_pincode AS "adminPincode",
                    p.admin_profile_picture AS "adminProfilePicture", p.admin_designation AS "adminDesignation", 
-                   p.admin_department AS "adminDepartment", p.admin_bio AS "adminBio"
+                   p.admin_department AS "adminDepartment", p.admin_bio AS "adminBio",
+                   'Company Admin' AS "assignedRoles",
+                   NULL AS "assignedRoleIds"
             FROM company_admin ca
             LEFT JOIN address a ON a.id = ca.id
             LEFT JOIN profile p ON p.id = ca.id
@@ -467,8 +471,9 @@ class CompanyService {
                     SET ${profileFields.join(', ')}
                     WHERE id = $${profileIndex};
                 `;
-                await client.query(profileUpdateQuery, profileValues);
             }
+
+            // Update role assignments (Omitted: dynamic roles dropped)
 
             await client.query('COMMIT');
             return { success: true, message: 'Company admin updated successfully.' };

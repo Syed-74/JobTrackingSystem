@@ -18,25 +18,31 @@ import {
   MapPin,
   Calendar,
   User,
-  Info
+  Info,
+  Shield
 } from 'lucide-react';
 
 const CompanyAdminsTab = ({ companyId, addActivityLog }) => {
   const { 
-    getCompanyAdmins, 
-    registerCompanyAdmin, 
-    updateCompanyAdminDetails, 
-    deleteCompanyAdminDetails 
+    getAllCompanyAccountManage, 
+    registerCompanyAccountManage, 
+    updateCompanyAccountManage, 
+    deleteCompanyAccountManage,
+    getAllDepartments
   } = useAuth();
 
-  // Local States
+  // Local States for Accounts
   const [admins, setAdmins] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All'); // 'All', 'Active', 'Suspended'
   
-  // Modal & Form States
+  // Local States for Departments
+  const [departments, setDepartments] = useState([]);
+  const [loadingDepts, setLoadingDepts] = useState(false);
+
+  // Modal & Form States for Accounts
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -45,44 +51,58 @@ const CompanyAdminsTab = ({ companyId, addActivityLog }) => {
   const [formSuccess, setFormSuccess] = useState('');
   const [formErrors, setFormErrors] = useState({});
 
-  // Admin Form State
+  // Account Form State
   const [formData, setFormData] = useState({
-    adminName: '',
-    adminEmail: '',
-    adminPhone: '',
-    adminAlternatePhone: '',
-    adminGender: 'Male',
-    adminDob: '',
-    adminDesignation: '',
-    adminDepartment: '',
-    adminBio: '',
-    adminAddress: '',
-    adminCity: '',
-    adminState: '',
-    adminCountry: 'India',
-    adminPincode: ''
+    fullName: '',
+    email: '',
+    password: '',
+    contactPhone: '',
+    alternatePhone: '',
+    gender: 'Male',
+    dateOfBirth: '',
+    departmentId: '',
+    designation: '',
+    bio: '',
+    address: '',
+    role: 'Recruiter'
   });
 
-  // Fetch Admins
+  // Fetch Accounts
   const fetchAdmins = async () => {
     setLoading(true);
     setError(null);
     try {
-      const adminList = await getCompanyAdmins(companyId);
-      setAdmins(adminList);
+      const list = await getAllCompanyAccountManage(companyId);
+      setAdmins(list || []);
     } catch (err) {
       console.error(err);
-      setError('Failed to fetch administrator metadata records.');
+      setError('Failed to fetch company staff account records.');
     } finally {
       setLoading(false);
     }
   };
 
+  // Fetch Departments
+  const fetchDepartments = async () => {
+    setLoadingDepts(true);
+    try {
+      const list = await getAllDepartments(companyId);
+      setDepartments(list || []);
+    } catch (err) {
+      console.error('Failed to fetch departments:', err);
+    } finally {
+      setLoadingDepts(false);
+    }
+  };
+
   useEffect(() => {
-    if (companyId) fetchAdmins();
+    if (companyId) {
+      fetchAdmins();
+      fetchDepartments();
+    }
   }, [companyId]);
 
-  // Input Change Handler
+  // Input Change Handlers
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({
@@ -95,17 +115,28 @@ const CompanyAdminsTab = ({ companyId, addActivityLog }) => {
     }
   };
 
-  // Validate form entries
+  // Validate Account Form
   const validateForm = () => {
     const errors = {};
-    if (!formData.adminName.trim()) errors.adminName = 'Administrator full name is required';
-    if (!formData.adminPhone.trim()) errors.adminPhone = 'Contact phone number is required';
+    if (!formData.fullName.trim()) errors.fullName = 'Account full name is required';
+    if (!formData.contactPhone.trim()) errors.contactPhone = 'Contact phone number is required';
+    if (!formData.role) errors.role = 'Access role selection is required';
     
     if (!isEditMode) {
-      if (!formData.adminEmail.trim()) {
-        errors.adminEmail = 'Login email address is required';
-      } else if (!/\S+@\S+\.\S+/.test(formData.adminEmail)) {
-        errors.adminEmail = 'Invalid email address format';
+      if (!formData.email.trim()) {
+        errors.email = 'Login email address is required';
+      } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
+        errors.email = 'Invalid email address format';
+      }
+      
+      if (!formData.password) {
+        errors.password = 'Login password is required';
+      } else if (formData.password.length < 6) {
+        errors.password = 'Password must be at least 6 characters';
+      }
+    } else {
+      if (formData.password && formData.password.length < 6) {
+        errors.password = 'Password must be at least 6 characters';
       }
     }
 
@@ -113,7 +144,7 @@ const CompanyAdminsTab = ({ companyId, addActivityLog }) => {
     return Object.keys(errors).length === 0;
   };
 
-  // Submit Form (Add or Edit)
+  // Submit Account Form (Add or Edit)
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!validateForm()) return;
@@ -125,58 +156,51 @@ const CompanyAdminsTab = ({ companyId, addActivityLog }) => {
       if (isEditMode) {
         // UPDATE Admin
         const updatePayload = {
-          adminName: formData.adminName,
-          adminPhone: formData.adminPhone,
-          adminAlternatePhone: formData.adminAlternatePhone,
-          adminGender: formData.adminGender,
-          adminDob: formData.adminDob || null,
-          adminDesignation: formData.adminDesignation,
-          adminDepartment: formData.adminDepartment,
-          adminBio: formData.adminBio,
-          adminAddress: formData.adminAddress,
-          adminCity: formData.adminCity,
-          adminState: formData.adminState,
-          adminCountry: formData.adminCountry,
-          adminPincode: formData.adminPincode
+          fullName: formData.fullName,
+          contactPhone: formData.contactPhone,
+          alternatePhone: formData.alternatePhone || null,
+          gender: formData.gender,
+          dateOfBirth: formData.dateOfBirth || null,
+          departmentId: formData.departmentId || null,
+          designation: formData.designation,
+          bio: formData.bio,
+          address: formData.address,
+          role: formData.role,
+          password: formData.password || null
         };
 
-        await updateCompanyAdminDetails(editingId, updatePayload);
-        setFormSuccess('Administrator profile updated successfully!');
-        addActivityLog(`Modified credentials for role account: "${formData.adminName}"`);
+        await updateCompanyAccountManage(editingId, updatePayload);
+        setFormSuccess('Administrator account updated successfully!');
+        addActivityLog(`Modified credentials for account: "${formData.fullName}"`);
         await fetchAdmins();
         setTimeout(() => setIsModalOpen(false), 1500);
       } else {
         // CREATE Admin
-        const tempPassword = 'TempPass!' + Math.random().toString(36).slice(-8) + '2026';
         const payload = {
-          email: formData.adminEmail,
-          password: tempPassword,
-          adminData: {
-            adminName: formData.adminName,
-            adminPhone: formData.adminPhone,
-            adminAlternatePhone: formData.adminAlternatePhone,
-            adminGender: formData.adminGender,
-            adminDob: formData.adminDob || null,
-            adminDesignation: formData.adminDesignation,
-            adminDepartment: formData.adminDepartment,
-            adminBio: formData.adminBio,
-            adminAddress: formData.adminAddress,
-            adminCity: formData.adminCity,
-            adminState: formData.adminState,
-            adminCountry: formData.adminCountry,
-            adminPincode: formData.adminPincode
-          }
+          company_id: companyId,
+          email: formData.email,
+          password: formData.password,
+          fullName: formData.fullName,
+          contactPhone: formData.contactPhone,
+          alternatePhone: formData.alternatePhone || null,
+          gender: formData.gender,
+          dateOfBirth: formData.dateOfBirth || null,
+          departmentId: formData.departmentId || null,
+          designation: formData.designation,
+          bio: formData.bio,
+          address: formData.address,
+          role: formData.role
         };
 
-        await registerCompanyAdmin(companyId, payload);
-        setFormSuccess('Administrator account created successfully!');
-        addActivityLog(`Provisioned new admin role: "${formData.adminName}"`);
+        await registerCompanyAccountManage(payload);
+        setFormSuccess('Staff account provisioned successfully!');
+        addActivityLog(`Provisioned new staff account: "${formData.fullName}"`);
         await fetchAdmins();
         setTimeout(() => setIsModalOpen(false), 1500);
       }
     } catch (err) {
       console.error(err);
-      setFormErrors({ submit: err.message || 'Action failed.' });
+      setFormErrors({ submit: err.response?.data?.message || err.message || 'Action failed.' });
     } finally {
       setSubmitting(false);
     }
@@ -186,8 +210,9 @@ const CompanyAdminsTab = ({ companyId, addActivityLog }) => {
   const handleToggleStatus = async (id, currentStatus, name) => {
     setActiveDropdownId(null);
     try {
-      await updateCompanyAdminDetails(id, { isActive: !currentStatus });
-      addActivityLog(`Toggled admin "${name}" active status to: ${!currentStatus}`);
+      const nextStatus = currentStatus === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
+      await updateCompanyAccountManage(id, { status: nextStatus });
+      addActivityLog(`Toggled account "${name}" status to: ${nextStatus}`);
       await fetchAdmins();
     } catch (err) {
       console.error(err);
@@ -198,21 +223,21 @@ const CompanyAdminsTab = ({ companyId, addActivityLog }) => {
   // Delete admin
   const handleDeleteAdmin = async (id, name) => {
     setActiveDropdownId(null);
-    if (!window.confirm(`Are you sure you want to deactivate and remove administrator "${name}"? This will disable their dashboard access instantly.`)) {
+    if (!window.confirm(`Are you sure you want to deactivate and remove account "${name}"? This will disable their access instantly.`)) {
       return;
     }
 
     try {
-      await deleteCompanyAdminDetails(id);
-      addActivityLog(`Deactivated administrator role: "${name}"`);
+      await deleteCompanyAccountManage(id);
+      addActivityLog(`Deactivated staff account: "${name}"`);
       await fetchAdmins();
     } catch (err) {
       console.error(err);
-      alert(err.message || 'Failed to delete administrator.');
+      alert(err.message || 'Failed to delete account.');
     }
   };
 
-  // Open modal for editing
+  // Open Account Modal
   const handleOpenEdit = (admin) => {
     setActiveDropdownId(null);
     setIsEditMode(true);
@@ -221,68 +246,64 @@ const CompanyAdminsTab = ({ companyId, addActivityLog }) => {
     setFormSuccess('');
     
     let formattedDate = '';
-    if (admin.adminDob) {
-      const dateObj = new Date(admin.adminDob);
+    if (admin.dateOfBirth) {
+      const dateObj = new Date(admin.dateOfBirth);
       if (!isNaN(dateObj.getTime())) {
         formattedDate = dateObj.toISOString().split('T')[0];
       }
     }
 
     setFormData({
-      adminName: admin.adminName || '',
-      adminEmail: admin.adminEmail || '',
-      adminPhone: admin.adminPhone || '',
-      adminAlternatePhone: admin.adminAlternatePhone || '',
-      adminGender: admin.adminGender || 'Male',
-      adminDob: formattedDate,
-      adminDesignation: admin.adminDesignation || '',
-      adminDepartment: admin.adminDepartment || '',
-      adminBio: admin.adminBio || '',
-      adminAddress: admin.adminAddress || '',
-      adminCity: admin.adminCity || '',
-      adminState: admin.adminState || '',
-      adminCountry: admin.adminCountry || 'India',
-      adminPincode: admin.adminPincode || ''
+      fullName: admin.fullName || '',
+      email: admin.email || '',
+      password: '',
+      contactPhone: admin.contactPhone || '',
+      alternatePhone: admin.alternatePhone || '',
+      gender: admin.gender || 'Male',
+      dateOfBirth: formattedDate,
+      departmentId: admin.departmentId || '',
+      designation: admin.designation || '',
+      bio: admin.bio || '',
+      address: admin.address || '',
+      role: admin.role || 'Recruiter'
     });
     setIsModalOpen(true);
   };
 
-  // Open modal for creating
   const handleOpenCreate = () => {
     setIsEditMode(false);
     setEditingId(null);
     setFormErrors({});
     setFormSuccess('');
     setFormData({
-      adminName: '',
-      adminEmail: '',
-      adminPhone: '',
-      adminAlternatePhone: '',
-      adminGender: 'Male',
-      adminDob: '',
-      adminDesignation: '',
-      adminDepartment: '',
-      adminBio: '',
-      adminAddress: '',
-      adminCity: '',
-      adminState: '',
-      adminCountry: 'India',
-      adminPincode: ''
+      fullName: '',
+      email: '',
+      password: '',
+      contactPhone: '',
+      alternatePhone: '',
+      gender: 'Male',
+      dateOfBirth: '',
+      departmentId: '',
+      designation: '',
+      bio: '',
+      address: '',
+      role: 'Recruiter'
     });
     setIsModalOpen(true);
   };
 
-  // Filtering Logic
+  // Filter accounts
   const filteredAdmins = admins.filter((admin) => {
     const matchesSearch = 
-      admin.adminName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (admin.adminEmail && admin.adminEmail.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (admin.adminDesignation && admin.adminDesignation.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (admin.adminDepartment && admin.adminDepartment.toLowerCase().includes(searchQuery.toLowerCase()));
+      (admin.fullName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (admin.email || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (admin.designation || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (admin.departmentName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (admin.role || '').toLowerCase().includes(searchQuery.toLowerCase());
 
     if (statusFilter === 'All') return matchesSearch;
-    if (statusFilter === 'Active') return matchesSearch && admin.isActive;
-    if (statusFilter === 'Suspended') return matchesSearch && !admin.isActive;
+    if (statusFilter === 'Active') return matchesSearch && admin.status === 'ACTIVE';
+    if (statusFilter === 'Suspended') return matchesSearch && admin.status !== 'ACTIVE';
     return matchesSearch;
   });
 
@@ -293,20 +314,23 @@ const CompanyAdminsTab = ({ companyId, addActivityLog }) => {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-xl md:text-2xl font-extrabold text-neutral-text tracking-tight">
-            Company Role Accounts
+            Company Role Accounts & Scope
           </h1>
           <p className="text-neutral-text-muted text-xs mt-0.5">
-            Provision secure credentials, assign administrative scope, and monitor logins.
+            Provision secure credentials and assign pre-defined administrative roles (HR, Recruiter, Department Manager).
           </p>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex gap-2 shrink-0">
           <button
-            onClick={fetchAdmins}
+            onClick={() => {
+              fetchAdmins();
+              fetchDepartments();
+            }}
             className="p-3 bg-neutral-surface hover:bg-neutral-muted text-neutral-text-muted hover:text-neutral-text border border-neutral-border rounded-theme-lg transition-colors focus:outline-none"
             title="Refresh database records"
           >
-            <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin text-primary' : ''}`} />
+            <RefreshCw className={`w-5 h-5 ${(loading || loadingDepts) ? 'animate-spin text-primary' : ''}`} />
           </button>
           
           <button
@@ -343,10 +367,10 @@ const CompanyAdminsTab = ({ companyId, addActivityLog }) => {
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-text-muted" />
           <input
             type="text"
-            placeholder="Search role name, designation..."
+            placeholder="Search name, designation, roles..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 bg-neutral-base border border-neutral-border rounded-theme-lg text-sm text-neutral-text placeholder-neutral-text-muted focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+            className="w-full pl-10 pr-4 py-2.5 bg-neutral-base border border-neutral-border rounded-theme-lg text-xs text-neutral-text placeholder-neutral-text-muted focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
           />
         </div>
       </div>
@@ -369,12 +393,13 @@ const CompanyAdminsTab = ({ companyId, addActivityLog }) => {
                 <tr className="border-b border-neutral-border text-[11px] font-bold text-neutral-text-muted uppercase tracking-wider bg-neutral-base/40">
                   <th className="py-4 px-6">Admin Member</th>
                   <th className="py-4 px-6">Department & Job</th>
+                  <th className="py-4 px-6">Assigned Role</th>
                   <th className="py-4 px-6">Contact Phone</th>
                   <th className="py-4 px-6 text-center">Status</th>
                   <th className="py-4 px-6 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-neutral-border text-sm">
+              <tbody className="divide-y divide-neutral-border text-xs">
                 {filteredAdmins.map((admin) => (
                   <tr key={admin.id} className="hover:bg-neutral-base/20 transition-colors">
                     
@@ -382,14 +407,14 @@ const CompanyAdminsTab = ({ companyId, addActivityLog }) => {
                     <td className="py-4 px-6">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-theme-lg bg-neutral-muted text-neutral-text font-black flex items-center justify-center border border-neutral-border uppercase shrink-0">
-                          {admin.adminName ? admin.adminName.charAt(0) : 'A'}
+                          {admin.fullName ? admin.fullName.charAt(0) : 'A'}
                         </div>
                         <div className="flex flex-col min-w-0">
                           <span className="font-bold text-neutral-text text-sm leading-snug truncate">
-                            {admin.adminName}
+                            {admin.fullName}
                           </span>
-                          <span className="text-xs text-neutral-text-muted truncate mt-0.5 max-w-[200px]">
-                            {admin.adminEmail}
+                          <span className="text-[11px] text-neutral-text-muted truncate mt-0.5 max-w-[200px]">
+                            {admin.email}
                           </span>
                         </div>
                       </div>
@@ -400,20 +425,27 @@ const CompanyAdminsTab = ({ companyId, addActivityLog }) => {
                       <div className="flex flex-col gap-0.5">
                         <span className="text-xs text-neutral-text font-semibold flex items-center gap-1">
                           <Briefcase className="w-3.5 h-3.5 text-neutral-text-muted" />
-                          {admin.adminDesignation || 'Administrator'}
+                          {admin.designation || 'Staff'}
                         </span>
                         <span className="text-[10px] text-neutral-text-muted uppercase tracking-wider font-bold">
-                          {admin.adminDepartment || 'Management'}
+                          {admin.departmentName || 'General'}
                         </span>
                       </div>
+                    </td>
+
+                    {/* Assigned Role */}
+                    <td className="py-4 px-6 font-bold text-neutral-text">
+                      <span className="px-2 py-0.5 bg-primary-light text-primary border border-primary/20 rounded-full text-[10px] font-bold">
+                        {admin.role || 'Unassigned'}
+                      </span>
                     </td>
 
                     {/* Phone */}
                     <td className="py-4 px-6 font-medium text-neutral-text">
                       <div className="flex flex-col">
-                        <span>{admin.adminPhone || 'N/A'}</span>
-                        {admin.adminAlternatePhone && (
-                          <span className="text-[10px] text-neutral-text-muted mt-0.5">Alt: {admin.adminAlternatePhone}</span>
+                        <span>{admin.contactPhone || 'N/A'}</span>
+                        {admin.alternatePhone && (
+                          <span className="text-[10px] text-neutral-text-muted mt-0.5">Alt: {admin.alternatePhone}</span>
                         )}
                       </div>
                     </td>
@@ -421,11 +453,11 @@ const CompanyAdminsTab = ({ companyId, addActivityLog }) => {
                     {/* Status */}
                     <td className="py-4 px-6 text-center">
                       <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-bold ${
-                        admin.isActive 
+                        admin.status === 'ACTIVE'
                           ? 'bg-success-light text-success border border-success/20' 
                           : 'bg-danger-light text-danger border border-danger/20'
                       }`}>
-                        {admin.isActive ? 'Active' : 'Suspended'}
+                        {admin.status === 'ACTIVE' ? 'Active' : 'Suspended'}
                       </span>
                     </td>
 
@@ -449,19 +481,19 @@ const CompanyAdminsTab = ({ companyId, addActivityLog }) => {
                           </button>
                           
                           <button 
-                            onClick={() => handleToggleStatus(admin.id, admin.isActive, admin.adminName)}
+                            onClick={() => handleToggleStatus(admin.id, admin.status, admin.fullName)}
                             className={`w-full px-4 py-2 text-xs hover:bg-neutral-base flex items-center gap-2 transition-colors font-medium ${
-                              admin.isActive ? 'text-danger' : 'text-success'
+                              admin.status === 'ACTIVE' ? 'text-danger' : 'text-success'
                             }`}
                           >
                             <Check className="w-4 h-4" />
-                            <span>{admin.isActive ? 'Suspend' : 'Activate'}</span>
+                            <span>{admin.status === 'ACTIVE' ? 'Suspend' : 'Activate'}</span>
                           </button>
 
                           <div className="border-t border-neutral-border my-1" />
                           
                           <button 
-                            onClick={() => handleDeleteAdmin(admin.id, admin.adminName)}
+                            onClick={() => handleDeleteAdmin(admin.id, admin.fullName)}
                             className="w-full px-4 py-2 text-xs text-danger hover:bg-danger-light flex items-center gap-2 transition-colors font-semibold"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -484,7 +516,7 @@ const CompanyAdminsTab = ({ companyId, addActivityLog }) => {
         )}
       </div>
 
-      {/* PROVISION FORM MODAL */}
+      {/* PROVISION ACCOUNT FORM MODAL */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div 
@@ -497,7 +529,7 @@ const CompanyAdminsTab = ({ companyId, addActivityLog }) => {
             <div className="px-6 py-4 border-b border-neutral-border flex items-center justify-between bg-neutral-base/15">
               <div className="flex items-center gap-2">
                 <Sparkles className="w-5 h-5 text-primary" />
-                <h3 className="font-bold text-lg text-neutral-text">
+                <h3 className="font-bold text-sm text-neutral-text">
                   {isEditMode ? 'Modify Administrator Profile' : 'Add Corporate Role Account'}
                 </h3>
               </div>
@@ -530,70 +562,89 @@ const CompanyAdminsTab = ({ companyId, addActivityLog }) => {
                 
                 {/* Section 1: Identity */}
                 <div className="space-y-4">
-                  <h4 className="text-xs font-bold text-primary uppercase tracking-wider border-b border-neutral-border pb-1">
+                  <h4 className="text-[11px] font-bold text-primary uppercase tracking-wider border-b border-neutral-border pb-1">
                     Workspace Linkage & Identity
                   </h4>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-bold text-neutral-text mb-1">Admin Full Name *</label>
+                      <label className="block text-xs font-bold text-neutral-text mb-1">Full Name *</label>
                       <input
                         type="text"
-                        name="adminName"
-                        value={formData.adminName}
+                        name="fullName"
+                        value={formData.fullName}
                         onChange={handleInputChange}
                         placeholder="e.g. Sarah Connor"
                         required
-                        className={`w-full px-3.5 py-2 bg-neutral-base border rounded-theme-lg text-sm text-neutral-text focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all ${
-                          formErrors.adminName ? 'border-danger' : 'border-neutral-border'
+                        className={`w-full px-3.5 py-2 bg-neutral-base border rounded-theme-lg text-xs text-neutral-text focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all ${
+                          formErrors.fullName ? 'border-danger' : 'border-neutral-border'
                         }`}
                         disabled={submitting}
                       />
-                      {formErrors.adminName && <p className="text-[10px] text-danger mt-1 font-semibold">{formErrors.adminName}</p>}
+                      {formErrors.fullName && <p className="text-[10px] text-danger mt-1 font-semibold">{formErrors.fullName}</p>}
                     </div>
 
                     <div>
                       <label className="block text-xs font-bold text-neutral-text mb-1">Login Email Address *</label>
                       <input
                         type="email"
-                        name="adminEmail"
-                        value={formData.adminEmail}
+                        name="email"
+                        value={formData.email}
                         onChange={handleInputChange}
                         placeholder="e.g. sarah@cyberdyne.com"
                         required
-                        className={`w-full px-3.5 py-2 bg-neutral-base border rounded-theme-lg text-sm text-neutral-text focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all ${
-                          formErrors.adminEmail ? 'border-danger' : 'border-neutral-border'
+                        className={`w-full px-3.5 py-2 bg-neutral-base border rounded-theme-lg text-xs text-neutral-text focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all ${
+                          formErrors.email ? 'border-danger' : 'border-neutral-border'
                         }`}
                         disabled={submitting || isEditMode}
                       />
-                      {formErrors.adminEmail && <p className="text-[10px] text-danger mt-1 font-semibold">{formErrors.adminEmail}</p>}
+                      {formErrors.email && <p className="text-[10px] text-danger mt-1 font-semibold">{formErrors.email}</p>}
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-neutral-text mb-1">
+                        {isEditMode ? 'New Login Password' : 'Login Password *'}
+                      </label>
+                      <input
+                        type="password"
+                        name="password"
+                        value={formData.password}
+                        onChange={handleInputChange}
+                        placeholder={isEditMode ? "Leave blank to keep current" : "Minimum 6 characters"}
+                        required={!isEditMode}
+                        className={`w-full px-3.5 py-2 bg-neutral-base border rounded-theme-lg text-xs text-neutral-text focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all ${
+                          formErrors.password ? 'border-danger' : 'border-neutral-border'
+                        }`}
+                        disabled={submitting}
+                      />
+                      {formErrors.password && <p className="text-[10px] text-danger mt-1 font-semibold">{formErrors.password}</p>}
                     </div>
 
                     <div>
                       <label className="block text-xs font-bold text-neutral-text mb-1">Contact Phone *</label>
                       <input
                         type="text"
-                        name="adminPhone"
-                        value={formData.adminPhone}
+                        name="contactPhone"
+                        value={formData.contactPhone}
                         onChange={handleInputChange}
                         placeholder="e.g. +91 98765 43210"
                         required
-                        className={`w-full px-3.5 py-2 bg-neutral-base border rounded-theme-lg text-sm text-neutral-text focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all ${
-                          formErrors.adminPhone ? 'border-danger' : 'border-neutral-border'
+                        className={`w-full px-3.5 py-2 bg-neutral-base border rounded-theme-lg text-xs text-neutral-text focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all ${
+                          formErrors.contactPhone ? 'border-danger' : 'border-neutral-border'
                         }`}
                         disabled={submitting}
                       />
-                      {formErrors.adminPhone && <p className="text-[10px] text-danger mt-1 font-semibold">{formErrors.adminPhone}</p>}
+                      {formErrors.contactPhone && <p className="text-[10px] text-danger mt-1 font-semibold">{formErrors.contactPhone}</p>}
                     </div>
 
                     <div>
                       <label className="block text-xs font-bold text-neutral-text mb-1">Alternate Phone</label>
                       <input
                         type="text"
-                        name="adminAlternatePhone"
-                        value={formData.adminAlternatePhone}
+                        name="alternatePhone"
+                        value={formData.alternatePhone}
                         onChange={handleInputChange}
-                        className="w-full px-3.5 py-2 bg-neutral-base border border-neutral-border rounded-theme-lg text-sm text-neutral-text focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                        className="w-full px-3.5 py-2 bg-neutral-base border border-neutral-border rounded-theme-lg text-xs text-neutral-text focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
                         disabled={submitting}
                       />
                     </div>
@@ -601,10 +652,10 @@ const CompanyAdminsTab = ({ companyId, addActivityLog }) => {
                     <div>
                       <label className="block text-xs font-bold text-neutral-text mb-1">Gender</label>
                       <select
-                        name="adminGender"
-                        value={formData.adminGender}
+                        name="gender"
+                        value={formData.gender}
                         onChange={handleInputChange}
-                        className="w-full px-3 py-2 bg-neutral-base border border-neutral-border rounded-theme-lg text-sm text-neutral-text focus:outline-none"
+                        className="w-full px-3 py-2 bg-neutral-base border border-neutral-border rounded-theme-lg text-xs text-neutral-text focus:outline-none"
                         disabled={submitting}
                       >
                         <option value="Male">Male</option>
@@ -617,45 +668,76 @@ const CompanyAdminsTab = ({ companyId, addActivityLog }) => {
                       <label className="block text-xs font-bold text-neutral-text mb-1">Date of Birth</label>
                       <input
                         type="date"
-                        name="adminDob"
-                        value={formData.adminDob}
+                        name="dateOfBirth"
+                        value={formData.dateOfBirth}
                         onChange={handleInputChange}
-                        className="w-full px-3.5 py-2 bg-neutral-base border border-neutral-border rounded-theme-lg text-sm text-neutral-text focus:outline-none"
+                        className="w-full px-3.5 py-2 bg-neutral-base border border-neutral-border rounded-theme-lg text-xs text-neutral-text focus:outline-none"
                         disabled={submitting}
                       />
                     </div>
                   </div>
                 </div>
 
-                {/* Section 2: Roles */}
+                {/* Section 2: Access Role select & Corporate Department select */}
                 <div className="space-y-4 pt-1">
-                  <h4 className="text-xs font-bold text-primary uppercase tracking-wider border-b border-neutral-border pb-1">
-                    Corporate Department & Roles
+                  <h4 className="text-[11px] font-bold text-primary uppercase tracking-wider border-b border-neutral-border pb-1">
+                    Access Role & Corporate Department
                   </h4>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-bold text-neutral-text mb-1">Job Designation</label>
-                      <input
-                        type="text"
-                        name="adminDesignation"
-                        value={formData.adminDesignation}
+                      <label className="block text-xs font-bold text-neutral-text mb-1">Access Role *</label>
+                      <select
+                        name="role"
+                        value={formData.role}
                         onChange={handleInputChange}
-                        placeholder="e.g. Senior Recruiter"
-                        className="w-full px-3.5 py-2 bg-neutral-base border border-neutral-border rounded-theme-lg text-sm text-neutral-text focus:outline-none"
+                        required
+                        className={`w-full px-3 py-2 bg-neutral-base border rounded-theme-lg text-xs text-neutral-text focus:outline-none ${
+                          formErrors.role ? 'border-danger' : 'border-neutral-border'
+                        }`}
                         disabled={submitting}
-                      />
+                      >
+                        <option value="Recruiter">Recruiter</option>
+                        <option value="HR Manager">HR Manager</option>
+                        <option value="Hiring Manager">Hiring Manager</option>
+                        <option value="Project Manager">Project Manager</option>
+                        <option value="Technical Manager">Technical Manager</option>
+                        <option value="Onboarding Manager">Onboarding Manager</option>
+                      </select>
+                      {formErrors.role && <p className="text-[10px] text-danger mt-1 font-semibold">{formErrors.role}</p>}
                     </div>
 
                     <div>
                       <label className="block text-xs font-bold text-neutral-text mb-1">Corporate Department</label>
+                      {loadingDepts ? (
+                        <p className="text-xs text-neutral-text-muted italic">Loading departments...</p>
+                      ) : (
+                        <select
+                          name="departmentId"
+                          value={formData.departmentId}
+                          onChange={handleInputChange}
+                          className="w-full px-3 py-2 bg-neutral-base border border-neutral-border rounded-theme-lg text-xs text-neutral-text focus:outline-none"
+                          disabled={submitting}
+                        >
+                          <option value="">Select Department...</option>
+                          {departments.map((dept) => (
+                            <option key={dept.id} value={dept.id}>
+                              {dept.name} ({dept.code})
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-neutral-text mb-1">Job Designation</label>
                       <input
                         type="text"
-                        name="adminDepartment"
-                        value={formData.adminDepartment}
+                        name="designation"
+                        value={formData.designation}
                         onChange={handleInputChange}
-                        placeholder="e.g. Human Resources"
-                        className="w-full px-3.5 py-2 bg-neutral-base border border-neutral-border rounded-theme-lg text-sm text-neutral-text focus:outline-none"
+                        placeholder="e.g. Senior Recruiter"
+                        className="w-full px-3.5 py-2 bg-neutral-base border border-neutral-border rounded-theme-lg text-xs text-neutral-text focus:outline-none"
                         disabled={submitting}
                       />
                     </div>
@@ -663,11 +745,11 @@ const CompanyAdminsTab = ({ companyId, addActivityLog }) => {
                     <div className="md:col-span-2">
                       <label className="block text-xs font-bold text-neutral-text mb-1">Bio / Profile Notes</label>
                       <textarea
-                        name="adminBio"
-                        value={formData.adminBio}
+                        name="bio"
+                        value={formData.bio}
                         onChange={handleInputChange}
                         rows={2}
-                        className="w-full px-3.5 py-2 bg-neutral-base border border-neutral-border rounded-theme-lg text-sm text-neutral-text focus:outline-none"
+                        className="w-full px-3.5 py-2 bg-neutral-base border border-neutral-border rounded-theme-lg text-xs text-neutral-text focus:outline-none"
                         disabled={submitting}
                       />
                     </div>
@@ -676,67 +758,19 @@ const CompanyAdminsTab = ({ companyId, addActivityLog }) => {
 
                 {/* Section 3: Address */}
                 <div className="space-y-4 pt-1">
-                  <h4 className="text-xs font-bold text-primary uppercase tracking-wider border-b border-neutral-border pb-1">
+                  <h4 className="text-[11px] font-bold text-primary uppercase tracking-wider border-b border-neutral-border pb-1">
                     Address Records
                   </h4>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="md:col-span-2">
+                  <div className="grid grid-cols-1 gap-4">
+                    <div>
                       <label className="block text-xs font-bold text-neutral-text mb-1">Residence Address</label>
                       <input
                         type="text"
-                        name="adminAddress"
-                        value={formData.adminAddress}
+                        name="address"
+                        value={formData.address}
                         onChange={handleInputChange}
-                        className="w-full px-3.5 py-2 bg-neutral-base border border-neutral-border rounded-theme-lg text-sm text-neutral-text focus:outline-none"
-                        disabled={submitting}
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-neutral-text mb-1">City</label>
-                      <input
-                        type="text"
-                        name="adminCity"
-                        value={formData.adminCity}
-                        onChange={handleInputChange}
-                        className="w-full px-3.5 py-2 bg-neutral-base border border-neutral-border rounded-theme-lg text-sm text-neutral-text focus:outline-none"
-                        disabled={submitting}
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-neutral-text mb-1">State</label>
-                      <input
-                        type="text"
-                        name="adminState"
-                        value={formData.adminState}
-                        onChange={handleInputChange}
-                        className="w-full px-3.5 py-2 bg-neutral-base border border-neutral-border rounded-theme-lg text-sm text-neutral-text focus:outline-none"
-                        disabled={submitting}
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-neutral-text mb-1">Country</label>
-                      <input
-                        type="text"
-                        name="adminCountry"
-                        value={formData.adminCountry}
-                        onChange={handleInputChange}
-                        className="w-full px-3.5 py-2 bg-neutral-base border border-neutral-border rounded-theme-lg text-sm text-neutral-text focus:outline-none"
-                        disabled={submitting}
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-neutral-text mb-1">Pincode</label>
-                      <input
-                        type="text"
-                        name="adminPincode"
-                        value={formData.adminPincode}
-                        onChange={handleInputChange}
-                        className="w-full px-3.5 py-2 bg-neutral-base border border-neutral-border rounded-theme-lg text-sm text-neutral-text focus:outline-none"
+                        className="w-full px-3.5 py-2 bg-neutral-base border border-neutral-border rounded-theme-lg text-xs text-neutral-text focus:outline-none"
                         disabled={submitting}
                       />
                     </div>
@@ -751,14 +785,14 @@ const CompanyAdminsTab = ({ companyId, addActivityLog }) => {
                   type="button"
                   onClick={() => setIsModalOpen(false)}
                   disabled={submitting}
-                  className="px-5 py-2.5 border border-neutral-border hover:bg-neutral-muted text-neutral-text text-sm font-semibold rounded-theme-lg transition-colors focus:outline-none"
+                  className="px-5 py-2.5 border border-neutral-border hover:bg-neutral-muted text-neutral-text text-xs font-semibold rounded-theme-lg transition-colors focus:outline-none"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-5 py-2.5 bg-primary hover:bg-primary-hover text-neutral-textInverse text-sm font-bold rounded-theme-lg shadow-theme-sm transition-all focus:outline-none"
+                  className="px-5 py-2.5 bg-primary hover:bg-primary-hover text-neutral-textInverse text-xs font-bold rounded-theme-lg shadow-theme-sm transition-all focus:outline-none"
                 >
                   {submitting ? (
                     <RefreshCw className="w-4 h-4 animate-spin inline mr-2" />

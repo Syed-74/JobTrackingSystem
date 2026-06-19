@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useAuth } from '../../../context/AuthContext';
 import { 
   Briefcase, 
   Search, 
@@ -17,7 +18,10 @@ import {
   Eye
 } from 'lucide-react';
 
-const JobPostsTab = ({ jobs, departments, onUpdateJobs, addActivityLog }) => {
+const JobPostsTab = ({ jobs, departments, companyAccounts = [], onUpdateJobs, addActivityLog }) => {
+  const { createJobPosting, updateJobPosting, deleteJobPosting } = useAuth();
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [deptFilter, setDeptFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
@@ -38,10 +42,17 @@ const JobPostsTab = ({ jobs, departments, onUpdateJobs, addActivityLog }) => {
     description: '',
     requirements: '',
     salary: '',
-    status: 'Active'
+    status: 'Active',
+    assignedUserId: ''
   });
 
   const [errors, setErrors] = useState({});
+
+  // Get assignee full name helper
+  const getAssigneeName = (userId) => {
+    const account = companyAccounts?.find(acc => acc.userId === userId);
+    return account ? account.fullName : 'Unassigned';
+  };
 
   // Input changes
   const handleInputChange = (e) => {
@@ -60,6 +71,7 @@ const JobPostsTab = ({ jobs, departments, onUpdateJobs, addActivityLog }) => {
     if (!formData.department) newErrors.department = 'Department selection is required';
     if (!formData.location.trim()) newErrors.location = 'Job location is required';
     if (!formData.description.trim()) newErrors.description = 'Job description is required';
+    if (!formData.assignedUserId) newErrors.assignedUserId = 'Assignee selection is required';
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -76,9 +88,12 @@ const JobPostsTab = ({ jobs, departments, onUpdateJobs, addActivityLog }) => {
       description: '',
       requirements: '',
       salary: '',
-      status: 'Active'
+      status: 'Active',
+      assignedUserId: ''
     });
     setErrors({});
+    setSubmitError('');
+    setSubmitting(false);
     setIsModalOpen(true);
   };
 
@@ -94,39 +109,25 @@ const JobPostsTab = ({ jobs, departments, onUpdateJobs, addActivityLog }) => {
       description: job.description || '',
       requirements: job.requirements || '',
       salary: job.salary || '',
-      status: job.status
+      status: job.status,
+      assignedUserId: job.assignedUserId || ''
     });
     setErrors({});
+    setSubmitError('');
+    setSubmitting(false);
     setIsModalOpen(true);
   };
 
   // Save (Add or Edit)
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!validateForm()) return;
 
-    let updatedList = [];
-    if (isEditMode) {
-      updatedList = jobs.map(j => {
-        if (j.id === editingId) {
-          return {
-            ...j,
-            title: formData.title,
-            department: formData.department,
-            location: formData.location,
-            type: formData.type,
-            description: formData.description,
-            requirements: formData.requirements,
-            salary: formData.salary,
-            status: formData.status
-          };
-        }
-        return j;
-      });
-      addActivityLog(`Modified job posting details for: "${formData.title}"`);
-    } else {
-      const newJob = {
-        id: 'job-' + Math.random().toString(36).substr(2, 9),
+    setSubmitting(true);
+    setSubmitError('');
+
+    try {
+      const payload = {
         title: formData.title,
         department: formData.department,
         location: formData.location,
@@ -134,38 +135,58 @@ const JobPostsTab = ({ jobs, departments, onUpdateJobs, addActivityLog }) => {
         description: formData.description,
         requirements: formData.requirements,
         salary: formData.salary,
-        status: 'Active',
-        applicationsCount: 0,
-        createdAt: new Date().toISOString().split('T')[0]
+        status: formData.status,
+        assignedUserId: formData.assignedUserId
       };
-      updatedList = [newJob, ...jobs];
-      addActivityLog(`Posted new job opening: "${formData.title}"`);
-    }
 
-    onUpdateJobs(updatedList);
-    setIsModalOpen(false);
+      let updatedList = [];
+      if (isEditMode) {
+        const updatedJob = await updateJobPosting(editingId, payload);
+        updatedList = jobs.map(j => j.id === editingId ? updatedJob : j);
+        addActivityLog(`Modified job posting details for: "${formData.title}"`);
+      } else {
+        const newJob = await createJobPosting(payload);
+        updatedList = [newJob, ...jobs];
+        addActivityLog(`Posted new job opening: "${formData.title}"`);
+      }
+
+      onUpdateJobs(updatedList);
+      setIsModalOpen(false);
+    } catch (err) {
+      console.error(err);
+      setSubmitError(err.response?.data?.message || err.message || 'Failed to save job posting.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   // Delete
-  const handleDelete = (id, title) => {
+  const handleDelete = async (id, title) => {
     if (window.confirm(`Are you sure you want to permanently delete the job posting for "${title}"?`)) {
-      const updatedList = jobs.filter(j => j.id !== id);
-      onUpdateJobs(updatedList);
-      addActivityLog(`Deleted job opening: "${title}"`);
+      try {
+        await deleteJobPosting(id);
+        const updatedList = jobs.filter(j => j.id !== id);
+        onUpdateJobs(updatedList);
+        addActivityLog(`Deleted job opening: "${title}"`);
+      } catch (err) {
+        console.error(err);
+        alert(err.response?.data?.message || err.message || 'Failed to delete job posting.');
+      }
     }
   };
 
   // Toggle Close/Open Status
-  const handleToggleStatus = (id, currentStatus, title) => {
+  const handleToggleStatus = async (id, currentStatus, title) => {
     const nextStatus = currentStatus === 'Active' ? 'Closed' : 'Active';
-    const updatedList = jobs.map(j => {
-      if (j.id === id) {
-        return { ...j, status: nextStatus };
-      }
-      return j;
-    });
-    onUpdateJobs(updatedList);
-    addActivityLog(`Changed job "${title}" status to: ${nextStatus}`);
+    try {
+      const updatedJob = await updateJobPosting(id, { status: nextStatus });
+      const updatedList = jobs.map(j => j.id === id ? updatedJob : j);
+      onUpdateJobs(updatedList);
+      addActivityLog(`Changed job "${title}" status to: ${nextStatus}`);
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || err.message || 'Failed to toggle status.');
+    }
   };
 
   // Filtering Logic
@@ -256,6 +277,7 @@ const JobPostsTab = ({ jobs, departments, onUpdateJobs, addActivityLog }) => {
                   <th className="py-3 px-6">Department</th>
                   <th className="py-3 px-6">Location</th>
                   <th className="py-3 px-6">Contract</th>
+                  <th className="py-3 px-6">Assignee</th>
                   <th className="py-3 px-6 text-center">Applications</th>
                   <th className="py-3 px-6 text-center">Status</th>
                   <th className="py-3 px-6 text-right">Actions</th>
@@ -296,6 +318,20 @@ const JobPostsTab = ({ jobs, departments, onUpdateJobs, addActivityLog }) => {
                       <span className="px-2.5 py-0.5 bg-secondary-light text-secondary rounded-full">
                         {job.type}
                       </span>
+                    </td>
+
+                    {/* Assignee */}
+                    <td className="py-3.5 px-6 font-semibold text-neutral-text">
+                      <div className="flex flex-col">
+                        <span className="text-xs text-neutral-text font-bold">
+                          {getAssigneeName(job.assignedUserId)}
+                        </span>
+                        {job.assignedUserId && (
+                          <span className="text-[10px] text-neutral-text-muted mt-0.5">
+                            {companyAccounts?.find(acc => acc.userId === job.assignedUserId)?.role || ''}
+                          </span>
+                        )}
+                      </div>
                     </td>
 
                     {/* Applications Count */}
@@ -404,6 +440,15 @@ const JobPostsTab = ({ jobs, departments, onUpdateJobs, addActivityLog }) => {
                 </div>
               )}
 
+              {viewingJob.assignedUserId && (
+                <div>
+                  <h4 className="font-bold text-neutral-text-muted uppercase tracking-wider mb-1">Assigned Recruiter/Manager</h4>
+                  <p className="font-semibold text-neutral-text">
+                    {getAssigneeName(viewingJob.assignedUserId)} ({companyAccounts?.find(acc => acc.userId === viewingJob.assignedUserId)?.role || 'Staff'})
+                  </p>
+                </div>
+              )}
+
               <div className="border-t border-neutral-border pt-4 flex items-center justify-between text-[10px] text-neutral-text-muted font-medium">
                 <span className="flex items-center gap-1">
                   <Calendar className="w-3.5 h-3.5" />
@@ -508,6 +553,26 @@ const JobPostsTab = ({ jobs, departments, onUpdateJobs, addActivityLog }) => {
                     className="w-full px-3 py-2 bg-neutral-base border border-neutral-border rounded-theme-lg text-xs focus:outline-none"
                   />
                 </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-neutral-text mb-1">Assigned Recruiter/Manager *</label>
+                  <select
+                    name="assignedUserId"
+                    value={formData.assignedUserId}
+                    onChange={handleInputChange}
+                    className={`w-full px-3 py-2 bg-neutral-base border rounded-theme-lg text-xs text-neutral-text focus:outline-none ${
+                      errors.assignedUserId ? 'border-danger' : 'border-neutral-border'
+                    }`}
+                  >
+                    <option value="">Select an Assignee...</option>
+                    {companyAccounts.map(acc => (
+                      <option key={acc.id} value={acc.userId}>
+                        {acc.fullName} ({acc.role})
+                      </option>
+                    ))}
+                  </select>
+                  {errors.assignedUserId && <p className="text-[9px] text-danger mt-1 font-semibold">{errors.assignedUserId}</p>}
+                </div>
               </div>
 
               <div>
@@ -552,19 +617,30 @@ const JobPostsTab = ({ jobs, departments, onUpdateJobs, addActivityLog }) => {
                 </div>
               )}
 
+              {submitError && (
+                <div className="p-3 bg-danger-light border border-danger/10 text-danger text-[11px] rounded-theme-lg font-bold animate-in fade-in">
+                  {submitError}
+                </div>
+              )}
+
               <div className="flex justify-end gap-2.5 pt-3 border-t border-neutral-border">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 border border-neutral-border hover:bg-neutral-muted text-neutral-text text-xs font-semibold rounded-theme-lg"
+                  disabled={submitting}
+                  className="px-4 py-2 border border-neutral-border hover:bg-neutral-muted text-neutral-text text-xs font-semibold rounded-theme-lg disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-primary hover:bg-primary-hover text-neutral-textInverse text-xs font-bold rounded-theme-lg"
+                  disabled={submitting}
+                  className="px-4 py-2 bg-primary hover:bg-primary-hover text-neutral-textInverse text-xs font-bold rounded-theme-lg disabled:opacity-50 flex items-center gap-1.5"
                 >
-                  {isEditMode ? 'Update Details' : 'Post Opening'}
+                  {submitting && (
+                    <span className="w-3.5 h-3.5 border-2 border-neutral-textInverse/30 border-t-neutral-textInverse rounded-full animate-spin" />
+                  )}
+                  <span>{isEditMode ? 'Update Details' : 'Post Opening'}</span>
                 </button>
               </div>
             </form>

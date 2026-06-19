@@ -2,7 +2,11 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const companyRoutes = require('./routes/companyRoutes');
-
+const departmentRoutes = require('./routes/departmentRoutes');
+const companyAccountRoutes = require('./routes/companyAccountRoutes');
+const jobPostingRoutes = require('./routes/jobPosting.routes');
+const employeeRoutes = require('./routes/employeeRoutes');
+const jobsRoutes = require('./routes/jobsRoutes');
 const app = express();
 
 // Serve static uploads folder
@@ -17,6 +21,12 @@ app.use(express.json());
 
 // Routes Gateway
 app.use('/api/v1', companyRoutes);
+app.use('/api/v1', departmentRoutes);
+app.use('/api/v1', companyAccountRoutes);
+app.use('/api/v1/job-posting', jobPostingRoutes);
+app.use('/api/v1/employee', employeeRoutes);
+app.use('/api/jobs', jobsRoutes);
+app.use('/api/v1/jobs', jobsRoutes);
 
 // Global Central Error-Handling Middleware
 app.use((err, req, res, next) => {

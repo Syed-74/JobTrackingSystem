@@ -20,7 +20,7 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
     return <Navigate to="/login" replace />;
   }
 
-  if (allowedRoles && !allowedRoles.includes(user.user_type)) {
+  if (allowedRoles && !allowedRoles.includes(user.user_type) && !allowedRoles.includes(user.role)) {
     // Role not authorized - redirect to Login (or dynamic fallback)
     return <Navigate to="/login" replace />;
   }

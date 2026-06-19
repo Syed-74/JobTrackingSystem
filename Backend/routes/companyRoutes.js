@@ -4,6 +4,7 @@ const router = express.Router();
 const companyController = require('../controllers/companyController');
 const authController = require('../controllers/authController');
 const superAdminController = require('../controllers/superAdminController');
+const departmentController = require('../controllers/departmentController');
 const authMiddleware = require('../middleware/authMiddleware');
 const { restrictTo } = require('../middleware/roleMiddleware');
 
@@ -20,9 +21,9 @@ router.post('/upload', authMiddleware, upload.single('logo'), companyController.
 
 // Company workspace administration routes
 router.get('/companies', authMiddleware, restrictTo('SUPER_ADMIN'), companyController.getAllCompanies);
-router.get('/company/:id', authMiddleware, companyController.getCompanyById);
-router.get('/company/:id/details', authMiddleware, companyController.getCompanyDetails);
-router.put('/company/:id', authMiddleware, companyController.updateCompanyDetails);
+router.get('/company/:id', authMiddleware, restrictTo('SUPER_ADMIN', 'COMPANY_ADMIN', 'HR Manager', 'Project Manager', 'Recruiter', 'Hiring Manager', 'Technical Manager', 'Onboarding Manager'), companyController.getCompanyById);
+router.get('/company/:id/details', authMiddleware, restrictTo('SUPER_ADMIN', 'COMPANY_ADMIN', 'HR Manager', 'Project Manager', 'Recruiter', 'Hiring Manager', 'Technical Manager', 'Onboarding Manager'), companyController.getCompanyDetails);
+router.put('/company/:id', authMiddleware, restrictTo('SUPER_ADMIN', 'COMPANY_ADMIN', 'HR Manager'), companyController.updateCompanyDetails);
 router.delete('/company/:id', authMiddleware, restrictTo('SUPER_ADMIN'), companyController.deleteCompanyDetails);
 
 // Company admin member provisioning routes
@@ -31,5 +32,7 @@ router.get('/companies/:companyId/admins', authMiddleware, companyController.get
 router.get('/company-admins', authMiddleware, restrictTo('SUPER_ADMIN'), companyController.getAllCompanyAdmins);
 router.put('/company-admins/:id', authMiddleware, restrictTo('SUPER_ADMIN', 'COMPANY_USER'), companyController.updateCompanyAdmin);
 router.delete('/company-admins/:id', authMiddleware, restrictTo('SUPER_ADMIN', 'COMPANY_USER'), companyController.deleteCompanyAdmin);
+
+
 
 module.exports = router;
