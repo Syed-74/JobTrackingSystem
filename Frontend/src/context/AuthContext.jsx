@@ -400,6 +400,11 @@ export const AuthProvider = ({ children }) => {
       } else if (jobData.salary.includes('€')) {
         salaryCurrency = 'EUR';
       }
+    } else {
+      // Map direct numeric values if available
+      salaryMin = jobData.salaryMin !== undefined && jobData.salaryMin !== '' ? parseFloat(jobData.salaryMin) : null;
+      salaryMax = jobData.salaryMax !== undefined && jobData.salaryMax !== '' ? parseFloat(jobData.salaryMax) : null;
+      salaryCurrency = jobData.salaryCurrency || 'INR';
     }
 
     let status = 'OPEN';
@@ -422,12 +427,22 @@ export const AuthProvider = ({ children }) => {
       jobType: jobData.type,
       jobDescription: jobData.description,
       jobRequirements: jobData.requirements,
+      jobResponsibilities: jobData.responsibilities || null,
+      workMode: jobData.workMode || null,
       salaryMin,
       salaryMax,
       salaryCurrency,
+      experienceMin: jobData.experienceMin !== undefined && jobData.experienceMin !== '' ? parseInt(jobData.experienceMin, 10) : null,
+      experienceMax: jobData.experienceMax !== undefined && jobData.experienceMax !== '' ? parseInt(jobData.experienceMax, 10) : null,
+      education: jobData.education || null,
+      skills: jobData.skills || null,
+      openings: jobData.openings !== undefined && jobData.openings !== '' ? parseInt(jobData.openings, 10) : 1,
+      employmentLevel: jobData.employmentLevel || null,
       status: status,
       assignedRecruiter: jobData.assignedUserId || null,
-      companyId: user?.company_id || null
+      companyId: user?.company_id || null,
+      applicationDeadline: jobData.applicationDeadline || null,
+      expectedJoiningDate: jobData.expectedJoiningDate || null
     };
   };
 
@@ -471,7 +486,20 @@ export const AuthProvider = ({ children }) => {
       type: backendJob.jobType,
       description: backendJob.jobDescription,
       requirements: backendJob.jobRequirements,
+      responsibilities: backendJob.jobResponsibilities || '',
+      workMode: backendJob.workMode || '',
       salary: salaryStr,
+      salaryMin: backendJob.salaryMin || '',
+      salaryMax: backendJob.salaryMax || '',
+      salaryCurrency: backendJob.salaryCurrency || 'INR',
+      experienceMin: backendJob.experienceMin || '',
+      experienceMax: backendJob.experienceMax || '',
+      education: backendJob.education || '',
+      skills: backendJob.skills || '',
+      openings: backendJob.openings || 1,
+      employmentLevel: backendJob.employmentLevel || '',
+      applicationDeadline: backendJob.applicationDeadline ? new Date(backendJob.applicationDeadline).toISOString().split('T')[0] : '',
+      expectedJoiningDate: backendJob.expectedJoiningDate ? new Date(backendJob.expectedJoiningDate).toISOString().split('T')[0] : '',
       status: status,
       applicationsCount: backendJob.totalApplications || 0,
       createdAt: backendJob.createdAt ? new Date(backendJob.createdAt).toISOString().split('T')[0] : '',

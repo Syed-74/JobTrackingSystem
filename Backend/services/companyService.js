@@ -154,14 +154,28 @@ class CompanyService {
             if (userRes.rows.length === 0) {
                 throw new Error('Company profile not found.');
             }
-            const userId = userRes.rows[0].user_id;
+            const companyOwnerUserId = userRes.rows[0].user_id;
 
-            // Delete the company record (this cascades to address, and profile)
+            // Find associated admin user IDs
+            const adminUsersQuery = 'SELECT user_id FROM company_admin WHERE company_id = $1;';
+            const adminUsersRes = await client.query(adminUsersQuery, [companyId]);
+            const adminUserIds = adminUsersRes.rows.map(r => r.user_id);
+
+            // Find associated account manage user IDs
+            const manageUsersQuery = 'SELECT user_id FROM company_account_manage WHERE company_id = $1;';
+            const manageUsersRes = await client.query(manageUsersQuery, [companyId]);
+            const manageUserIds = manageUsersRes.rows.map(r => r.user_id);
+
+            // Delete job postings first to satisfy foreign key constraints
+            await client.query('DELETE FROM job_posting WHERE company_id = $1;', [companyId]);
+
+            // Delete the company record (this cascades to company_admin, company_account_manage, department, etc.)
             await client.query('DELETE FROM company WHERE id = $1;', [companyId]);
 
-            // Delete the associated user record if exists
-            if (userId) {
-                await client.query('DELETE FROM users WHERE id = $1;', [userId]);
+            // Delete all associated user accounts
+            const allUserIdsToDelete = [companyOwnerUserId, ...adminUserIds, ...manageUserIds].filter(Boolean);
+            if (allUserIdsToDelete.length > 0) {
+                await client.query('DELETE FROM users WHERE id = ANY($1::uuid[]);', [allUserIdsToDelete]);
             }
 
             await client.query('COMMIT');

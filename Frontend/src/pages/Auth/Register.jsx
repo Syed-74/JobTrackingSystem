@@ -8,7 +8,6 @@ import {
   Phone, 
   CreditCard, 
   MapPin, 
-  Heart, 
   AlertCircle, 
   CheckCircle, 
   ChevronRight, 
@@ -150,16 +149,9 @@ const Register = () => {
                 <div className={`flex-1 h-0.5 mx-2 transition-all duration-500 ${currentStep >= 2 ? 'bg-primary' : 'bg-neutral-border'}`} />
                 <div className="flex flex-col items-center">
                   <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold transition-all duration-300 ${currentStep >= 2 ? 'bg-primary text-neutral-text-inverse font-bold scale-110 shadow-theme-md' : 'bg-neutral-base text-neutral-text-muted'}`}>
-                    {currentStep > 2 ? <CheckCircle className="w-5 h-5" /> : '2'}
+                    2
                   </div>
                   <span className="text-[10px] mt-1.5 font-semibold uppercase tracking-wider text-neutral-text-muted">Profile</span>
-                </div>
-                <div className={`flex-1 h-0.5 mx-2 transition-all duration-500 ${currentStep >= 3 ? 'bg-primary' : 'bg-neutral-border'}`} />
-                <div className="flex flex-col items-center">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold transition-all duration-300 ${currentStep >= 3 ? 'bg-primary text-neutral-text-inverse font-bold scale-110 shadow-theme-md' : 'bg-neutral-base text-neutral-text-muted'}`}>
-                    3
-                  </div>
-                  <span className="text-[10px] mt-1.5 font-semibold uppercase tracking-wider text-neutral-text-muted">Emergency</span>
                 </div>
               </div>
             </div>
@@ -416,40 +408,7 @@ const Register = () => {
                 </div>
               )}
 
-              {/* STEP 3: Emergency Contacts */}
-              {currentStep === 3 && (
-                <div className="space-y-3.5 animate-fadeIn">
-                  <div>
-                    <label className="block text-xs font-semibold text-neutral-text-muted tracking-wide uppercase">Emergency Contact Name</label>
-                    <div className="relative mt-1">
-                      <Heart className="absolute left-3.5 top-3.5 h-4 w-4 text-neutral-text-muted/60" />
-                      <input
-                        type="text"
-                        name="emergencyContactName"
-                        value={formData.emergencyContactName}
-                        onChange={handleChange}
-                        placeholder="Jane Doe"
-                        className="pl-10 block w-full px-4 py-3 bg-neutral-surface border border-neutral-border rounded-theme-xl text-sm placeholder-neutral-text-muted/40 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all duration-200"
-                      />
-                    </div>
-                  </div>
 
-                  <div>
-                    <label className="block text-xs font-semibold text-neutral-text-muted tracking-wide uppercase">Emergency Contact Phone</label>
-                    <div className="relative mt-1">
-                      <Phone className="absolute left-3.5 top-3.5 h-4 w-4 text-neutral-text-muted/60" />
-                      <input
-                        type="tel"
-                        name="emergencyContactNumber"
-                        value={formData.emergencyContactNumber}
-                        onChange={handleChange}
-                        placeholder="9876543210"
-                        className="pl-10 block w-full px-4 py-3 bg-neutral-surface border border-neutral-border rounded-theme-xl text-sm placeholder-neutral-text-muted/40 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all duration-200"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
 
               {/* Buttons Actions Navigation */}
               <div className="flex items-center gap-3 pt-4">
@@ -465,7 +424,7 @@ const Register = () => {
                   </button>
                 )}
 
-                {currentStep < 3 ? (
+                {currentStep < 2 ? (
                   <button
                     type="button"
                     onClick={handleNext}

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../../context/AuthContext';
+import * as XLSX from 'xlsx';
 import { 
   Briefcase, 
   Search, 
@@ -34,6 +35,14 @@ const JobPostsTab = ({ jobs, departments, companyAccounts = [], onUpdateJobs, ad
   // Detailed View Modal states
   const [viewingJob, setViewingJob] = useState(null);
 
+  // Bulk Upload states
+  const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
+  const [bulkInputText, setBulkInputText] = useState('');
+  const [bulkJobs, setBulkJobs] = useState([]);
+  const [bulkValidationErrors, setBulkValidationErrors] = useState([]);
+  const [bulkStatus, setBulkStatus] = useState(''); // '', 'validating', 'validated', 'uploading', 'completed', 'error'
+  const [bulkProgress, setBulkProgress] = useState(0);
+
   const [formData, setFormData] = useState({
     title: '',
     department: '',
@@ -41,9 +50,21 @@ const JobPostsTab = ({ jobs, departments, companyAccounts = [], onUpdateJobs, ad
     type: 'Full-time',
     description: '',
     requirements: '',
-    salary: '',
+    responsibilities: '',
+    workMode: 'Onsite',
+    salaryMin: '',
+    salaryMax: '',
+    salaryCurrency: 'INR',
+    experienceMin: '',
+    experienceMax: '',
+    education: '',
+    skills: '',
+    openings: 1,
+    employmentLevel: 'Mid',
     status: 'Active',
-    assignedUserId: ''
+    assignedUserId: '',
+    applicationDeadline: '',
+    expectedJoiningDate: ''
   });
 
   const [errors, setErrors] = useState({});
@@ -87,9 +108,21 @@ const JobPostsTab = ({ jobs, departments, companyAccounts = [], onUpdateJobs, ad
       type: 'Full-time',
       description: '',
       requirements: '',
-      salary: '',
+      responsibilities: '',
+      workMode: 'Onsite',
+      salaryMin: '',
+      salaryMax: '',
+      salaryCurrency: 'INR',
+      experienceMin: '',
+      experienceMax: '',
+      education: '',
+      skills: '',
+      openings: 1,
+      employmentLevel: 'Mid',
       status: 'Active',
-      assignedUserId: ''
+      assignedUserId: '',
+      applicationDeadline: '',
+      expectedJoiningDate: ''
     });
     setErrors({});
     setSubmitError('');
@@ -108,9 +141,21 @@ const JobPostsTab = ({ jobs, departments, companyAccounts = [], onUpdateJobs, ad
       type: job.type,
       description: job.description || '',
       requirements: job.requirements || '',
-      salary: job.salary || '',
+      responsibilities: job.responsibilities || '',
+      workMode: job.workMode || 'Onsite',
+      salaryMin: job.salaryMin || '',
+      salaryMax: job.salaryMax || '',
+      salaryCurrency: job.salaryCurrency || 'INR',
+      experienceMin: job.experienceMin || '',
+      experienceMax: job.experienceMax || '',
+      education: job.education || '',
+      skills: job.skills || '',
+      openings: job.openings || 1,
+      employmentLevel: job.employmentLevel || 'Mid',
       status: job.status,
-      assignedUserId: job.assignedUserId || ''
+      assignedUserId: job.assignedUserId || '',
+      applicationDeadline: job.applicationDeadline || '',
+      expectedJoiningDate: job.expectedJoiningDate || ''
     });
     setErrors({});
     setSubmitError('');
@@ -134,9 +179,21 @@ const JobPostsTab = ({ jobs, departments, companyAccounts = [], onUpdateJobs, ad
         type: formData.type,
         description: formData.description,
         requirements: formData.requirements,
-        salary: formData.salary,
+        responsibilities: formData.responsibilities,
+        workMode: formData.workMode,
+        salaryMin: formData.salaryMin,
+        salaryMax: formData.salaryMax,
+        salaryCurrency: formData.salaryCurrency,
+        experienceMin: formData.experienceMin,
+        experienceMax: formData.experienceMax,
+        education: formData.education,
+        skills: formData.skills,
+        openings: formData.openings,
+        employmentLevel: formData.employmentLevel,
         status: formData.status,
-        assignedUserId: formData.assignedUserId
+        assignedUserId: formData.assignedUserId,
+        applicationDeadline: formData.applicationDeadline,
+        expectedJoiningDate: formData.expectedJoiningDate
       };
 
       let updatedList = [];
@@ -158,6 +215,312 @@ const JobPostsTab = ({ jobs, departments, companyAccounts = [], onUpdateJobs, ad
     } finally {
       setSubmitting(false);
     }
+  };
+
+  // Bulk Job posting handlers
+  const verifyBulkList = (parsed) => {
+    if (!Array.isArray(parsed)) {
+      setBulkValidationErrors([{ index: 0, jobTitle: 'Format Error', errors: ['Input must be a JSON array of job objects.'] }]);
+      setBulkStatus('error');
+      return;
+    }
+
+    const validatedJobs = [];
+    const errors = [];
+
+    parsed.forEach((job, index) => {
+      const jobErrors = [];
+
+      if (!job.title || !String(job.title).trim()) {
+        jobErrors.push('Job title is required.');
+      }
+      let resolvedDept = '';
+      if (!job.department) {
+        jobErrors.push('Department is required.');
+      } else {
+        const matchedDept = departments.find(d => d.name.toLowerCase() === String(job.department).trim().toLowerCase());
+        if (!matchedDept) {
+          jobErrors.push(`Department "${job.department}" does not exist in the database.`);
+        } else {
+          resolvedDept = matchedDept.name; // Use exact database casing
+        }
+      }
+      if (!job.location || !String(job.location).trim()) {
+        jobErrors.push('Location is required.');
+      }
+      if (!job.description || !String(job.description).trim()) {
+        jobErrors.push('Description is required.');
+      }
+
+      let assignedId = '';
+      const rawAssignedVal = job.assignedUserId ? String(job.assignedUserId).trim() : '';
+
+      if (rawAssignedVal) {
+        // Strip trailing parentheses containing role information (e.g. " (Recruiter)" or " (Manager)")
+        const cleanName = rawAssignedVal.replace(/\s*\([^)]*\)\s*$/, '').trim();
+
+        // Resolve recruiter/manager user ID from company accounts by looking up:
+        // 1. By exact userId (UUID)
+        let matchedAccount = companyAccounts.find(acc => acc.userId === rawAssignedVal);
+        // 2. By email (case-insensitive)
+        if (!matchedAccount) {
+          matchedAccount = companyAccounts.find(acc => acc.email && acc.email.toLowerCase() === rawAssignedVal.toLowerCase());
+        }
+        // 3. By full name (case-insensitive)
+        if (!matchedAccount) {
+          matchedAccount = companyAccounts.find(acc => acc.fullName && acc.fullName.toLowerCase() === rawAssignedVal.toLowerCase());
+        }
+        // 4. By cleaned full name (case-insensitive, strips suffixes like "(Recruiter)")
+        if (!matchedAccount) {
+          matchedAccount = companyAccounts.find(acc => acc.fullName && acc.fullName.toLowerCase() === cleanName.toLowerCase());
+        }
+
+        if (matchedAccount) {
+          assignedId = matchedAccount.userId;
+        } else {
+          assignedId = rawAssignedVal; // Fallback to raw value for validation check
+        }
+      }
+
+      if (!assignedId) {
+        jobErrors.push('Assigned Recruiter/Manager user ID is required.');
+      } else {
+        const userExists = companyAccounts.some(acc => acc.userId === assignedId);
+        if (!userExists) {
+          jobErrors.push(`Assigned user "${rawAssignedVal}" is not a valid recruiter/manager.`);
+        }
+      }
+
+      if (jobErrors.length > 0) {
+        errors.push({ index, jobTitle: job.title || `Job #${index + 1}`, errors: jobErrors });
+      } else {
+        validatedJobs.push({
+          title: String(job.title).trim(),
+          department: resolvedDept,
+          location: String(job.location).trim(),
+          type: job.type ? String(job.type).trim() : 'Full-time',
+          description: String(job.description).trim(),
+          requirements: job.requirements ? String(job.requirements).trim() : '',
+          responsibilities: job.responsibilities ? String(job.responsibilities).trim() : '',
+          workMode: job.workMode ? String(job.workMode).trim() : 'Onsite',
+          salaryMin: job.salaryMin || '',
+          salaryMax: job.salaryMax || '',
+          salaryCurrency: job.salaryCurrency ? String(job.salaryCurrency).trim() : 'INR',
+          experienceMin: job.experienceMin || '',
+          experienceMax: job.experienceMax || '',
+          education: job.education ? String(job.education).trim() : '',
+          skills: job.skills ? String(job.skills).trim() : '',
+          openings: job.openings || 1,
+          employmentLevel: job.employmentLevel ? String(job.employmentLevel).trim() : 'Mid',
+          status: job.status ? String(job.status).trim() : 'Active',
+          assignedUserId: assignedId,
+          applicationDeadline: job.applicationDeadline || '',
+          expectedJoiningDate: job.expectedJoiningDate || ''
+        });
+      }
+    });
+
+    setBulkJobs(validatedJobs);
+    setBulkValidationErrors(errors);
+    if (errors.length > 0) {
+      setBulkStatus('error');
+    } else {
+      setBulkStatus('validated');
+    }
+  };
+
+  const handleVerifyBulkData = () => {
+    setBulkValidationErrors([]);
+    setBulkJobs([]);
+    try {
+      const parsed = JSON.parse(bulkInputText);
+      verifyBulkList(parsed);
+    } catch (e) {
+      setBulkValidationErrors([{ index: 0, jobTitle: 'Parsing Error', errors: [`Invalid JSON format: ${e.message}`] }]);
+      setBulkStatus('error');
+    }
+  };
+
+  const handleExcelUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setBulkValidationErrors([]);
+    setBulkJobs([]);
+    setBulkStatus('validating');
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const data = new Uint8Array(event.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        const parsed = XLSX.utils.sheet_to_json(sheet);
+
+        if (!Array.isArray(parsed) || parsed.length === 0) {
+          setBulkValidationErrors([{ index: 0, jobTitle: 'Format Error', errors: ['Excel sheet is empty or invalid.'] }]);
+          setBulkStatus('error');
+          return;
+        }
+
+        const formatted = parsed.map(row => {
+          const findVal = (keys) => {
+            for (const key of keys) {
+              const cleanedSearchKey = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+              const matchedKey = Object.keys(row).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === cleanedSearchKey);
+              if (matchedKey !== undefined) return row[matchedKey];
+            }
+            return undefined;
+          };
+
+          return {
+            title: findVal(['title', 'jobtitle', 'job_title', 'position', 'role']),
+            department: findVal(['department', 'dept', 'departmentname', 'department_name']),
+            location: findVal(['location', 'joblocation', 'job_location', 'city']),
+            type: findVal(['type', 'jobtype', 'job_type', 'employmenttype']),
+            description: findVal(['description', 'jobdescription', 'job_description', 'about']),
+            requirements: findVal(['requirements', 'jobrequirements', 'job_requirements', 'requiredskills']),
+            responsibilities: findVal(['responsibilities', 'jobresponsibilities', 'job_responsibilities']),
+            workMode: findVal(['workmode', 'work_mode']),
+            salaryMin: findVal(['salarymin', 'salary_min', 'minsalary', 'salaryminimum']),
+            salaryMax: findVal(['salarymax', 'salary_max', 'maxsalary', 'salarymaximum']),
+            salaryCurrency: findVal(['salarycurrency', 'salary_currency', 'currency']),
+            experienceMin: findVal(['experiencemin', 'experience_min', 'minexperience']),
+            experienceMax: findVal(['experiencemax', 'experience_max', 'maxexperience']),
+            education: findVal(['education', 'requirededucation']),
+            skills: findVal(['skills', 'requiredskills', 'skillset']),
+            openings: findVal(['openings', 'totalopenings', 'vacancy']),
+            employmentLevel: findVal(['employmentlevel', 'employment_level', 'level']),
+            status: findVal(['status', 'jobstatus', 'activestatus']),
+            assignedUserId: findVal([
+              'assigneduserid',
+              'assigned_user_id',
+              'recruiterid',
+              'managerid',
+              'assignedrecruiter',
+              'assignedrecruitermanager',
+              'assignedrecruitermanageruserid',
+              'recruiter',
+              'manager',
+              'assigneduser',
+              'assignedrecruiter/manager',
+              'assignedrecruiter/manageruserid',
+              'recruiter/manager'
+            ]),
+            applicationDeadline: findVal(['applicationdeadline', 'application_deadline', 'deadline']),
+            expectedJoiningDate: findVal(['expectedjoiningdate', 'expected_joining_date', 'joiningdate'])
+          };
+        });
+
+        setBulkInputText(JSON.stringify(formatted, null, 2));
+        verifyBulkList(formatted);
+      } catch (err) {
+        console.error(err);
+        setBulkValidationErrors([{ index: 0, jobTitle: 'Excel Error', errors: [`Failed to parse Excel file: ${err.message}`] }]);
+        setBulkStatus('error');
+      }
+    };
+    reader.readAsArrayBuffer(file);
+    e.target.value = '';
+  };
+
+  const handleUploadBulkJobs = async () => {
+    if (bulkJobs.length === 0) return;
+    setBulkStatus('uploading');
+    setBulkProgress(0);
+
+    const uploadedList = [...jobs];
+    let successCount = 0;
+    let failCount = 0;
+
+    for (let i = 0; i < bulkJobs.length; i++) {
+      try {
+        const jobToUpload = bulkJobs[i];
+        const newJob = await createJobPosting(jobToUpload);
+        uploadedList.unshift(newJob);
+        successCount++;
+        addActivityLog(`Posted new job opening (Bulk): "${jobToUpload.title}"`);
+      } catch (err) {
+        console.error(`Failed to upload job #${i + 1}`, err);
+        failCount++;
+      }
+      setBulkProgress(Math.round(((i + 1) / bulkJobs.length) * 100));
+    }
+
+    onUpdateJobs(uploadedList);
+    setBulkStatus('completed');
+    alert(`Bulk job posting complete! Success: ${successCount}, Failed: ${failCount}`);
+    
+    if (failCount === 0) {
+      setIsBulkModalOpen(false);
+      setBulkInputText('');
+      setBulkJobs([]);
+      setBulkValidationErrors([]);
+      setBulkStatus('');
+    }
+  };
+
+  const handleGenerateTemplate = () => {
+    const template = [
+      {
+        title: "Senior Node.js Developer",
+        department: departments.length > 0 ? departments[0].name : "Engineering",
+        location: "Mumbai, India",
+        type: "Full-time",
+        workMode: "Hybrid",
+        salaryMin: 800000,
+        salaryMax: 1500000,
+        salaryCurrency: "INR",
+        experienceMin: 4,
+        experienceMax: 8,
+        education: "B.Tech/MCA",
+        skills: "Node.js, Express, PostgreSQL, Redis",
+        openings: 2,
+        employmentLevel: "Senior",
+        assignedUserId: companyAccounts.length > 0 ? companyAccounts[0].userId : "ENTER-USER-UUID-HERE",
+        applicationDeadline: "2026-08-31",
+        expectedJoiningDate: "2026-09-15",
+        description: "We are looking for a Senior Node.js developer to join our team...",
+        requirements: "Strong background in REST APIs, PostgreSQL and AWS deployment.",
+        responsibilities: "Write clean, testable code, optimize database queries, mentor juniors."
+      }
+    ];
+    setBulkInputText(JSON.stringify(template, null, 2));
+    setBulkStatus('');
+    setBulkValidationErrors([]);
+  };
+
+  const handleDownloadExcelTemplate = () => {
+    const templateData = [
+      {
+        "Title": "Senior Node.js Developer",
+        "Department": departments.length > 0 ? departments[0].name : "Engineering",
+        "Location": "Mumbai, India",
+        "Type": "Full-time",
+        "Work Mode": "Hybrid",
+        "Salary Min": 800000,
+        "Salary Max": 1500000,
+        "Salary Currency": "INR",
+        "Experience Min": 4,
+        "Experience Max": 8,
+        "Education": "B.Tech/MCA",
+        "Skills": "Node.js, Express, PostgreSQL, Redis",
+        "Openings": 2,
+        "Employment Level": "Senior",
+        "Assigned User Id": companyAccounts.length > 0 ? companyAccounts[0].userId : "ENTER-USER-UUID-HERE",
+        "Application Deadline": "2026-08-31",
+        "Expected Joining Date": "2026-09-15",
+        "Description": "We are looking for a Senior Node.js developer to join our team...",
+        "Requirements": "Strong background in REST APIs, PostgreSQL and AWS deployment.",
+        "Responsibilities": "Write clean, testable code, optimize database queries, mentor juniors."
+      }
+    ];
+
+    const worksheet = XLSX.utils.json_to_sheet(templateData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Template");
+    XLSX.writeFile(workbook, "job_posting_template.xlsx");
   };
 
   // Delete
@@ -215,13 +578,23 @@ const JobPostsTab = ({ jobs, departments, companyAccounts = [], onUpdateJobs, ad
           </p>
         </div>
 
-        <button
-          onClick={handleOpenCreate}
-          className="flex items-center justify-center gap-2 px-4 py-2.5 bg-primary hover:bg-primary-hover text-neutral-textInverse font-bold text-xs rounded-theme-lg shadow-theme-md transition-all focus:outline-none"
-        >
-          <Plus className="w-4.5 h-4.5" />
-          <span>Post New Job</span>
-        </button>
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={() => setIsBulkModalOpen(true)}
+            className="flex items-center justify-center gap-2 px-4 py-2.5 bg-neutral-base hover:bg-neutral-muted border border-neutral-border text-neutral-text font-bold text-xs rounded-theme-lg shadow-theme-sm transition-all focus:outline-none"
+          >
+            <Layers className="w-4.5 h-4.5" />
+            <span>Bulk Post</span>
+          </button>
+          
+          <button
+            onClick={handleOpenCreate}
+            className="flex items-center justify-center gap-2 px-4 py-2.5 bg-primary hover:bg-primary-hover text-neutral-textInverse font-bold text-xs rounded-theme-lg shadow-theme-md transition-all focus:outline-none"
+          >
+            <Plus className="w-4.5 h-4.5" />
+            <span>Post New Job</span>
+          </button>
+        </div>
       </div>
 
       {/* Filters Dashboard */}
@@ -418,15 +791,60 @@ const JobPostsTab = ({ jobs, departments, companyAccounts = [], onUpdateJobs, ad
                   <span className="px-2.5 py-0.5 bg-primary-light text-primary border border-primary/20 rounded-full font-bold">{viewingJob.department}</span>
                   <span className="px-2.5 py-0.5 bg-secondary-light text-secondary rounded-full font-bold">{viewingJob.type}</span>
                   <span className="px-2.5 py-0.5 bg-neutral-muted text-neutral-text-muted border border-neutral-border rounded-full font-semibold">{viewingJob.location}</span>
+                  {viewingJob.workMode && (
+                    <span className="px-2.5 py-0.5 bg-neutral-base text-neutral-text border border-neutral-border rounded-full font-bold">{viewingJob.workMode}</span>
+                  )}
+                  {viewingJob.employmentLevel && (
+                    <span className="px-2.5 py-0.5 bg-neutral-base text-neutral-text border border-neutral-border rounded-full font-semibold">{viewingJob.employmentLevel} Level</span>
+                  )}
                 </div>
               </div>
 
-              {viewingJob.salary && (
-                <div>
-                  <h4 className="font-bold text-neutral-text-muted uppercase tracking-wider mb-1">Salary Range</h4>
-                  <p className="font-semibold text-neutral-text">{viewingJob.salary}</p>
-                </div>
-              )}
+              <div className="grid grid-cols-2 gap-4 border-b border-neutral-border pb-4">
+                {viewingJob.salary && (
+                  <div>
+                    <h4 className="font-bold text-neutral-text-muted uppercase tracking-wider mb-0.5">Salary Range</h4>
+                    <p className="font-semibold text-neutral-text">{viewingJob.salary}</p>
+                  </div>
+                )}
+                {(viewingJob.experienceMin || viewingJob.experienceMax) && (
+                  <div>
+                    <h4 className="font-bold text-neutral-text-muted uppercase tracking-wider mb-0.5">Experience Required</h4>
+                    <p className="font-semibold text-neutral-text">
+                      {viewingJob.experienceMin && viewingJob.experienceMax 
+                        ? `${viewingJob.experienceMin} - ${viewingJob.experienceMax} years`
+                        : viewingJob.experienceMin 
+                          ? `${viewingJob.experienceMin}+ years`
+                          : `Up to ${viewingJob.experienceMax} years`
+                      }
+                    </p>
+                  </div>
+                )}
+                {viewingJob.education && (
+                  <div>
+                    <h4 className="font-bold text-neutral-text-muted uppercase tracking-wider mb-0.5">Education</h4>
+                    <p className="font-semibold text-neutral-text">{viewingJob.education}</p>
+                  </div>
+                )}
+                {viewingJob.openings && (
+                  <div>
+                    <h4 className="font-bold text-neutral-text-muted uppercase tracking-wider mb-0.5">Total Openings</h4>
+                    <p className="font-semibold text-neutral-text">{viewingJob.openings} positions</p>
+                  </div>
+                )}
+                {viewingJob.applicationDeadline && (
+                  <div>
+                    <h4 className="font-bold text-neutral-text-muted uppercase tracking-wider mb-0.5">Application Deadline</h4>
+                    <p className="font-semibold text-neutral-text">{viewingJob.applicationDeadline}</p>
+                  </div>
+                )}
+                {viewingJob.expectedJoiningDate && (
+                  <div>
+                    <h4 className="font-bold text-neutral-text-muted uppercase tracking-wider mb-0.5">Expected Joining Date</h4>
+                    <p className="font-semibold text-neutral-text">{viewingJob.expectedJoiningDate}</p>
+                  </div>
+                )}
+              </div>
 
               <div>
                 <h4 className="font-bold text-neutral-text-muted uppercase tracking-wider mb-1">Role Description</h4>
@@ -440,8 +858,28 @@ const JobPostsTab = ({ jobs, departments, companyAccounts = [], onUpdateJobs, ad
                 </div>
               )}
 
-              {viewingJob.assignedUserId && (
+              {viewingJob.responsibilities && (
                 <div>
+                  <h4 className="font-bold text-neutral-text-muted uppercase tracking-wider mb-1">Key Responsibilities</h4>
+                  <p className="leading-relaxed whitespace-pre-wrap font-medium">{viewingJob.responsibilities}</p>
+                </div>
+              )}
+
+              {viewingJob.skills && (
+                <div>
+                  <h4 className="font-bold text-neutral-text-muted uppercase tracking-wider mb-1">Required Skills</h4>
+                  <div className="flex flex-wrap gap-1.5 mt-1.5">
+                    {viewingJob.skills.split(',').map((skill, index) => (
+                      <span key={index} className="px-2 py-0.5 bg-neutral-base border border-neutral-border rounded text-[10px] font-semibold">
+                        {skill.trim()}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {viewingJob.assignedUserId && (
+                <div className="border-t border-neutral-border pt-4">
                   <h4 className="font-bold text-neutral-text-muted uppercase tracking-wider mb-1">Assigned Recruiter/Manager</h4>
                   <p className="font-semibold text-neutral-text">
                     {getAssigneeName(viewingJob.assignedUserId)} ({companyAccounts?.find(acc => acc.userId === viewingJob.assignedUserId)?.role || 'Staff'})
@@ -528,6 +966,20 @@ const JobPostsTab = ({ jobs, departments, companyAccounts = [], onUpdateJobs, ad
                 </div>
 
                 <div>
+                  <label className="block text-xs font-bold text-neutral-text mb-1">Work Mode</label>
+                  <select
+                    name="workMode"
+                    value={formData.workMode}
+                    onChange={handleInputChange}
+                    className="w-full px-3 py-2 bg-neutral-base border border-neutral-border rounded-theme-lg text-xs text-neutral-text focus:outline-none"
+                  >
+                    <option value="Onsite">Onsite</option>
+                    <option value="Hybrid">Hybrid</option>
+                    <option value="Remote">Remote</option>
+                  </select>
+                </div>
+
+                <div>
                   <label className="block text-xs font-bold text-neutral-text mb-1">Location *</label>
                   <input
                     type="text"
@@ -543,18 +995,144 @@ const JobPostsTab = ({ jobs, departments, companyAccounts = [], onUpdateJobs, ad
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-neutral-text mb-1">Salary Range</label>
-                  <input
-                    type="text"
-                    name="salary"
-                    value={formData.salary}
+                  <label className="block text-xs font-bold text-neutral-text mb-1">Employment Level</label>
+                  <select
+                    name="employmentLevel"
+                    value={formData.employmentLevel}
                     onChange={handleInputChange}
-                    placeholder="e.g. ₹12,00,000 - ₹18,00,000 P.A."
+                    className="w-full px-3 py-2 bg-neutral-base border border-neutral-border rounded-theme-lg text-xs text-neutral-text focus:outline-none"
+                  >
+                    <option value="Junior">Junior</option>
+                    <option value="Mid">Mid</option>
+                    <option value="Senior">Senior</option>
+                    <option value="Lead">Lead</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-neutral-text mb-1">Total Openings</label>
+                  <input
+                    type="number"
+                    name="openings"
+                    value={formData.openings}
+                    onChange={handleInputChange}
+                    placeholder="1"
+                    min="1"
                     className="w-full px-3 py-2 bg-neutral-base border border-neutral-border rounded-theme-lg text-xs focus:outline-none"
                   />
                 </div>
 
                 <div>
+                  <label className="block text-xs font-bold text-neutral-text mb-1">Min Salary</label>
+                  <input
+                    type="number"
+                    name="salaryMin"
+                    value={formData.salaryMin}
+                    onChange={handleInputChange}
+                    placeholder="e.g. 500000"
+                    className="w-full px-3 py-2 bg-neutral-base border border-neutral-border rounded-theme-lg text-xs focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-neutral-text mb-1">Max Salary</label>
+                  <input
+                    type="number"
+                    name="salaryMax"
+                    value={formData.salaryMax}
+                    onChange={handleInputChange}
+                    placeholder="e.g. 800000"
+                    className="w-full px-3 py-2 bg-neutral-base border border-neutral-border rounded-theme-lg text-xs focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-neutral-text mb-1">Salary Currency</label>
+                  <select
+                    name="salaryCurrency"
+                    value={formData.salaryCurrency}
+                    onChange={handleInputChange}
+                    className="w-full px-3 py-2 bg-neutral-base border border-neutral-border rounded-theme-lg text-xs text-neutral-text focus:outline-none"
+                  >
+                    <option value="INR">INR (₹)</option>
+                    <option value="USD">USD ($)</option>
+                    <option value="EUR">EUR (€)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-neutral-text mb-1">Min Experience (Years)</label>
+                  <input
+                    type="number"
+                    name="experienceMin"
+                    value={formData.experienceMin}
+                    onChange={handleInputChange}
+                    placeholder="e.g. 2"
+                    min="0"
+                    className="w-full px-3 py-2 bg-neutral-base border border-neutral-border rounded-theme-lg text-xs focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-neutral-text mb-1">Max Experience (Years)</label>
+                  <input
+                    type="number"
+                    name="experienceMax"
+                    value={formData.experienceMax}
+                    onChange={handleInputChange}
+                    placeholder="e.g. 5"
+                    min="0"
+                    className="w-full px-3 py-2 bg-neutral-base border border-neutral-border rounded-theme-lg text-xs focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-neutral-text mb-1">Required Education</label>
+                  <input
+                    type="text"
+                    name="education"
+                    value={formData.education}
+                    onChange={handleInputChange}
+                    placeholder="e.g. B.Tech in Computer Science"
+                    className="w-full px-3 py-2 bg-neutral-base border border-neutral-border rounded-theme-lg text-xs focus:outline-none"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-bold text-neutral-text mb-1">Required Skills (Comma separated)</label>
+                  <input
+                    type="text"
+                    name="skills"
+                    value={formData.skills}
+                    onChange={handleInputChange}
+                    placeholder="e.g. React, Node.js, PostgreSQL"
+                    className="w-full px-3 py-2 bg-neutral-base border border-neutral-border rounded-theme-lg text-xs focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-neutral-text mb-1">Application Deadline</label>
+                  <input
+                    type="date"
+                    name="applicationDeadline"
+                    value={formData.applicationDeadline}
+                    onChange={handleInputChange}
+                    className="w-full px-3 py-2 bg-neutral-base border border-neutral-border rounded-theme-lg text-xs focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-neutral-text mb-1">Expected Joining Date</label>
+                  <input
+                    type="date"
+                    name="expectedJoiningDate"
+                    value={formData.expectedJoiningDate}
+                    onChange={handleInputChange}
+                    className="w-full px-3 py-2 bg-neutral-base border border-neutral-border rounded-theme-lg text-xs focus:outline-none"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
                   <label className="block text-xs font-bold text-neutral-text mb-1">Assigned Recruiter/Manager *</label>
                   <select
                     name="assignedUserId"
@@ -598,6 +1176,18 @@ const JobPostsTab = ({ jobs, departments, companyAccounts = [], onUpdateJobs, ad
                   onChange={handleInputChange}
                   rows={2}
                   placeholder="e.g. 5+ years experience, Node.js expert, AWS..."
+                  className="w-full px-3 py-2 bg-neutral-base border border-neutral-border rounded-theme-lg text-xs focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-neutral-text mb-1">Key Responsibilities</label>
+                <textarea
+                  name="responsibilities"
+                  value={formData.responsibilities}
+                  onChange={handleInputChange}
+                  rows={2}
+                  placeholder="e.g. Develop APIs, participate in code reviews, optimize database queries..."
                   className="w-full px-3 py-2 bg-neutral-base border border-neutral-border rounded-theme-lg text-xs focus:outline-none"
                 />
               </div>
@@ -648,6 +1238,165 @@ const JobPostsTab = ({ jobs, departments, companyAccounts = [], onUpdateJobs, ad
           </div>
         </div>
       )}
+      {/* BULK JOB POSTING MODAL */}
+      {isBulkModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="fixed inset-0 bg-neutral-text/50 backdrop-blur-sm" onClick={() => { if (bulkStatus !== 'uploading') setIsBulkModalOpen(false); }} />
+
+          <div className="relative w-full max-w-2xl bg-neutral-surface rounded-theme-xl shadow-theme-xl border border-neutral-border z-10 flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200 overflow-hidden">
+            {/* Header */}
+            <div className="px-5 py-4 border-b border-neutral-border flex items-center justify-between bg-neutral-base/15">
+              <div className="flex items-center gap-2">
+                <Layers className="w-5 h-5 text-primary" />
+                <h3 className="font-bold text-sm text-neutral-text">Bulk Post Job Openings</h3>
+              </div>
+              <button 
+                onClick={() => { if (bulkStatus !== 'uploading') setIsBulkModalOpen(false); }} 
+                className="p-1 text-neutral-text-muted hover:bg-neutral-muted hover:text-neutral-text rounded-theme-md"
+                disabled={bulkStatus === 'uploading'}
+              >
+                <X className="w-4.5 h-4.5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="overflow-y-auto p-5 space-y-4 text-xs">
+              <div className="bg-info-light border border-info/10 p-3.5 rounded-theme-lg text-info flex flex-col gap-1.5">
+                <div className="flex items-center gap-2 font-bold text-[11px] uppercase tracking-wide">
+                  <Info className="w-4 h-4 flex-shrink-0" />
+                  <span>Bulk Upload Instructions</span>
+                </div>
+                <p className="leading-relaxed font-medium">
+                  Paste a JSON array containing job objects OR upload an Excel sheet. Valid fields include: <code>title</code> (req), <code>department</code> (req), <code>location</code> (req), <code>description</code> (req), <code>assignedUserId</code> (req), <code>workMode</code>, <code>openings</code>, <code>salaryMin</code>, <code>salaryMax</code>, <code>salaryCurrency</code>, <code>skills</code>, <code>education</code>, and dates.
+                </p>
+                <div className="flex flex-wrap gap-2 mt-1">
+                  <button
+                    type="button"
+                    onClick={handleGenerateTemplate}
+                    disabled={bulkStatus === 'uploading'}
+                    className="px-3 py-1.5 bg-info hover:bg-info/95 text-neutral-textInverse font-bold rounded text-[10px] transition-colors"
+                  >
+                    Generate JSON Template
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDownloadExcelTemplate}
+                    disabled={bulkStatus === 'uploading'}
+                    className="px-3 py-1.5 bg-neutral-text hover:bg-neutral-text/90 text-neutral-textInverse font-bold rounded text-[10px] transition-colors"
+                  >
+                    Download Excel Template
+                  </button>
+                </div>
+              </div>
+
+              {/* Excel Upload Area */}
+              <div className="flex flex-col gap-1.5 p-4 border border-dashed border-neutral-border rounded-theme-lg bg-neutral-base/10 items-center justify-center text-center">
+                <p className="font-bold text-neutral-text">Upload Excel Sheet (.xlsx / .xls)</p>
+                <p className="text-[10px] text-neutral-text-muted">Upload an Excel sheet populated with job openings. Column names will be matched automatically.</p>
+                <input
+                  type="file"
+                  accept=".xlsx, .xls"
+                  onChange={handleExcelUpload}
+                  disabled={bulkStatus === 'uploading'}
+                  className="mt-2 text-xs file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-[10px] file:font-bold file:bg-primary file:text-neutral-textInverse hover:file:bg-primary-hover file:cursor-pointer"
+                />
+              </div>
+
+              {/* Textarea */}
+              <div className="flex flex-col gap-1">
+                <label className="font-bold text-neutral-text">JSON Data Array</label>
+                <textarea
+                  value={bulkInputText}
+                  onChange={(e) => {
+                    setBulkInputText(e.target.value);
+                    if (bulkStatus === 'validated' || bulkStatus === 'error') setBulkStatus('');
+                  }}
+                  rows={8}
+                  disabled={bulkStatus === 'uploading'}
+                  placeholder="Paste JSON array here..."
+                  className="w-full p-3 font-mono text-[10.5px] bg-neutral-base border border-neutral-border rounded-theme-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all resize-none"
+                />
+              </div>
+
+              {/* Validation Status / Error Log */}
+              {bulkValidationErrors.length > 0 && (
+                <div className="bg-danger-light border border-danger/10 p-3.5 rounded-theme-lg text-danger space-y-2">
+                  <h4 className="font-bold text-[11px] uppercase tracking-wide">Validation Failures</h4>
+                  <div className="max-h-36 overflow-y-auto space-y-2 pr-2">
+                    {bulkValidationErrors.map((err, i) => (
+                      <div key={i} className="font-medium">
+                        <span className="font-bold">{err.jobTitle}:</span>
+                        <ul className="list-disc list-inside ml-2.5 space-y-0.5 text-[11px]">
+                          {err.errors.map((msg, j) => (
+                            <li key={j}>{msg}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {bulkStatus === 'validated' && bulkJobs.length > 0 && (
+                <div className="bg-success-light border border-success/10 p-3.5 rounded-theme-lg text-success flex items-center gap-2 font-bold">
+                  <Check className="w-4.5 h-4.5" />
+                  <span>Success! {bulkJobs.length} job(s) parsed and validated. Ready to post.</span>
+                </div>
+              )}
+
+              {/* Progress bar */}
+              {bulkStatus === 'uploading' && (
+                <div className="space-y-2 pt-2">
+                  <div className="flex justify-between font-bold text-[11px] text-neutral-text-muted">
+                    <span>Uploading postings to database...</span>
+                    <span>{bulkProgress}%</span>
+                  </div>
+                  <div className="w-full bg-neutral-base border border-neutral-border rounded-full h-2 overflow-hidden">
+                    <div className="bg-primary h-full transition-all duration-300" style={{ width: `${bulkProgress}%` }} />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-5 py-4 border-t border-neutral-border flex justify-end gap-2.5 bg-neutral-base/10">
+              <button
+                type="button"
+                onClick={() => setIsBulkModalOpen(false)}
+                disabled={bulkStatus === 'uploading'}
+                className="px-4 py-2 border border-neutral-border hover:bg-neutral-muted text-neutral-text font-semibold rounded-theme-lg disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              
+              {bulkStatus !== 'validated' ? (
+                <button
+                  type="button"
+                  onClick={handleVerifyBulkData}
+                  disabled={!bulkInputText.trim() || bulkStatus === 'uploading'}
+                  className="px-4 py-2 bg-neutral-text hover:bg-neutral-text/90 text-neutral-textInverse font-bold rounded-theme-lg disabled:opacity-40"
+                >
+                  Verify Data
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleUploadBulkJobs}
+                  disabled={bulkStatus === 'uploading' || bulkJobs.length === 0}
+                  className="px-4 py-2 bg-primary hover:bg-primary-hover text-neutral-textInverse font-bold rounded-theme-lg disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  {bulkStatus === 'uploading' && (
+                    <span className="w-3.5 h-3.5 border-2 border-neutral-textInverse/30 border-t-neutral-textInverse rounded-full animate-spin" />
+                  )}
+                  <span>Post {bulkJobs.length} Jobs</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Close modal wrapper */}
 
     </div>
   );

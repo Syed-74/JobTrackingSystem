@@ -257,6 +257,7 @@ CREATE TABLE IF NOT EXISTS job_posting (
     location VARCHAR(255),
     salary_min NUMERIC(12,2),
     salary_max NUMERIC(12,2),
+    experience_level VARCHAR(50),           -- Junior, Mid, Senior, Lead
     salary_currency VARCHAR(10),
     experience_min INT,
     experience_max INT,
